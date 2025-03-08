@@ -1,6 +1,39 @@
 import Foundation
 import ZIPFoundation
 
+/// Errors that can occur during EPUB parsing
+public enum EPUBParserError: LocalizedError {
+    case contentOPFNotFound
+    case tocNCXNotFound
+    case chapterNotFound(id: String)
+    case htmlPathResolutionFailed
+    case opfParsingFailed
+    case tocNCXPathNotFound
+    case ncxParsingFailed
+    case ncxParseError
+
+    public var errorDescription: String? {
+        switch self {
+        case .contentOPFNotFound:
+            return "Failed to find content.opf path"
+        case .tocNCXNotFound:
+            return "TOC file not found"
+        case .chapterNotFound(let id):
+            return "Could not find chapter with id \(id)"
+        case .htmlPathResolutionFailed:
+            return "Could not resolve HTML path"
+        case .opfParsingFailed:
+            return "Failed to create parser for OPF"
+        case .tocNCXPathNotFound:
+            return "Could not find toc.ncx path"
+        case .ncxParsingFailed:
+            return "Failed to create parser for NCX"
+        case .ncxParseError:
+            return "Failed to parse NCX file"
+        }
+    }
+}
+
 /// A simple model to represent an EPUB chapter
 public struct EPUBChapterInfo: Identifiable, Hashable {
     public let id: String
@@ -68,10 +101,7 @@ public class EPUBParserUtil {
         // Step 2: Locate the content.opf file
         let containerXML = unzipDestination.appendingPathComponent("META-INF/container.xml")
         guard let contentOPFPath = parseContainerXML(at: containerXML) else {
-            throw NSError(
-                domain: "EPUBParserError",
-                code: 1001,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to find content.opf path"])
+            throw EPUBParserError.contentOPFNotFound
         }
 
         // Step 3: Set the OPF root and find toc.ncx
@@ -80,10 +110,7 @@ public class EPUBParserUtil {
 
         // Step 4: Parse toc.ncx and get chapters
         guard let tocPath = tocURL else {
-            throw NSError(
-                domain: "EPUBParserError",
-                code: 1002,
-                userInfo: [NSLocalizedDescriptionKey: "toc.ncx not found"])
+            throw EPUBParserError.tocNCXNotFound
         }
 
         let chapters = try parseChapters(at: tocPath)
@@ -118,17 +145,11 @@ public class EPUBParserUtil {
     /// - Returns: ChapterContent containing HTML content and title
     public func chapterContent(id: String) throws -> ChapterContent {
         guard let chapter = cachedChapters.first(where: { $0.id == id }) else {
-            throw NSError(
-                domain: "EPUBParserError",
-                code: 1003,
-                userInfo: [NSLocalizedDescriptionKey: "Could not find chapter with id \(id)"])
+            throw EPUBParserError.chapterNotFound(id: id)
         }
 
         guard let htmlPath = htmlPathForChapter(id: id) else {
-            throw NSError(
-                domain: "EPUBParserError",
-                code: 1003,
-                userInfo: [NSLocalizedDescriptionKey: "Could not resolve HTML path"])
+            throw EPUBParserError.htmlPathResolutionFailed
         }
 
         let htmlContent = try String(contentsOf: htmlPath, encoding: .utf8)
@@ -231,9 +252,7 @@ private class OPFParser: NSObject, XMLParserDelegate {
 
     func parseOPF(at url: URL) throws -> String {
         guard let parser = XMLParser(contentsOf: url) else {
-            throw NSError(
-                domain: "EPUBParserError", code: 1100,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create parser for OPF"])
+            throw EPUBParserError.opfParsingFailed
         }
 
         ncxPath = nil
@@ -253,9 +272,7 @@ private class OPFParser: NSObject, XMLParserDelegate {
             return path
         }
 
-        throw NSError(
-            domain: "EPUBParserError", code: 1101,
-            userInfo: [NSLocalizedDescriptionKey: "Could not find toc.ncx path"])
+        throw EPUBParserError.tocNCXPathNotFound
     }
 
     func parser(
@@ -307,9 +324,7 @@ private class TOCNCXParser: NSObject, XMLParserDelegate {
 
     func parseNCX(at url: URL) throws -> [EPUBChapterInfo] {
         guard let parser = XMLParser(contentsOf: url) else {
-            throw NSError(
-                domain: "EPUBParserError", code: 1200,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create parser for NCX"])
+            throw EPUBParserError.ncxParsingFailed
         }
 
         chapters = []
@@ -320,9 +335,7 @@ private class TOCNCXParser: NSObject, XMLParserDelegate {
         } else if let error = parser.parserError {
             throw error
         } else {
-            throw NSError(
-                domain: "EPUBParserError", code: 1201,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to parse NCX file"])
+            throw EPUBParserError.ncxParseError
         }
     }
 
