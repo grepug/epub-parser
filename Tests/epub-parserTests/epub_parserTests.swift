@@ -8,7 +8,7 @@ let testEPUBPath = URL(fileURLWithPath: "/Users/kai/Downloads/epub/88874.epub")
 
 struct EPUBParserTests {
     @Test func testEPUBParserInit() {
-        let parser = EPUBParserUtil(epubPath: testEPUBPath, identifier: "testID")
+        let parser = EPUBParser(epubPath: testEPUBPath, identifier: "testID")
 
         #expect(parser != nil)
     }
@@ -25,7 +25,7 @@ struct EPUBParserTests {
         }
 
         // let parser = EPUBParserUtil(epubPath: testProcessingEPUBPath, identifier: "testProcessing")
-        let parser = EPUBParserUtil(epubPath: testProcessingEPUBPath, identifier: "testID")
+        let parser = EPUBParser(epubPath: testProcessingEPUBPath, identifier: "testID")
 
         do {
             try parser.processEPUB()  // Now returns void instead of chapters
@@ -63,7 +63,7 @@ struct EPUBParserTests {
     }
 
     @Test func testCleanup() {
-        let parser = EPUBParserUtil(epubPath: testEPUBPath, identifier: "cleanupTest")
+        let parser = EPUBParser(epubPath: testEPUBPath, identifier: "cleanupTest")
 
         // Just verify this doesn't crash
         parser.cleanup()
@@ -71,7 +71,7 @@ struct EPUBParserTests {
     }
 
     @Test func testHtmlPathForChapter() {
-        let parser = EPUBParserUtil(epubPath: testEPUBPath, identifier: "pathTest")
+        let parser = EPUBParser(epubPath: testEPUBPath, identifier: "pathTest")
 
         // Since we haven't processed EPUB, attempting to get the HTML path for any ID should return nil
         #expect(parser.htmlPathForChapter(id: "ch1") == nil)
