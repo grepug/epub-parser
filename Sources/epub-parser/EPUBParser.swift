@@ -14,6 +14,7 @@ public class EPUBParser {
     private var tocURL: URL? = nil
 
     private var cachedChapters: [EPUBChapterInfo] = []
+    var manifestItems: [EPUBManifestItem] = []
 
     // MARK: - Initialization
 
@@ -43,6 +44,12 @@ public class EPUBParser {
         return cachedChapters
     }
 
+    /// Get all manifest items in the EPUB
+    /// - Returns: Array of EPUBManifestItem objects
+    public func manifest() -> [EPUBManifestItem] {
+        return manifestItems
+    }
+
     // MARK: - Public Methods
 
     /// Process the EPUB file and extract its chapters
@@ -61,7 +68,10 @@ public class EPUBParser {
         opfRootURL = contentOPFPath.deletingLastPathComponent()
         tocURL = try findTocNCX(opfURL: contentOPFPath)
 
-        // Step 4: Parse toc.ncx and get chapters
+        // Step 4: Parse manifest items
+        try parseManifestItems(opfURL: contentOPFPath)
+
+        // Step 5: Parse toc.ncx and get chapters
         guard let tocPath = tocURL else {
             throw EPUBParserError.tocNCXNotFound
         }
@@ -149,5 +159,10 @@ public class EPUBParser {
     private func parseChapters(at tocURL: URL) throws -> [EPUBChapterInfo] {
         let parser = TOCNCXParser()
         return try parser.parseNCX(at: tocURL)
+    }
+
+    private func parseManifestItems(opfURL: URL) throws {
+        let manifestParser = ManifestParser(baseURL: opfURL.deletingLastPathComponent())
+        manifestItems = try manifestParser.parseManifest(at: opfURL)
     }
 }

@@ -10,6 +10,7 @@ public enum EPUBParserError: LocalizedError {
     case tocNCXPathNotFound
     case ncxParsingFailed
     case ncxParseError
+    case opfParseError
 
     public var errorDescription: String? {
         switch self {
@@ -29,6 +30,8 @@ public enum EPUBParserError: LocalizedError {
             return "Failed to create parser for NCX"
         case .ncxParseError:
             return "Failed to parse NCX file"
+        case .opfParseError:
+            return "Failed to parse OPF file"
         }
     }
 }

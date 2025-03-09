@@ -1,5 +1,17 @@
 import Foundation
 
+/// Represents an item in the EPUB manifest
+public struct EPUBManifestItem: Hashable {
+    /// The unique identifier of the item
+    public let id: String
+    /// The path to the item
+    public let href: String
+    /// The media type of the item
+    public let mediaType: String
+    /// Any additional properties
+    public let properties: [String: String]
+}
+
 /// Parser for container.xml
 internal class ContainerXMLParser: NSObject, XMLParserDelegate {
     private var contentOPFPath: String?
@@ -191,6 +203,82 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
             isParsingText = false
         default:
             break
+        }
+    }
+}
+
+/// Parser for EPUB manifest items
+internal class ManifestParser: NSObject, XMLParserDelegate {
+    private var manifestItems: [EPUBManifestItem] = []
+    private var isParsingManifest = false
+    private var baseURL: URL
+
+    init(baseURL: URL) {
+        self.baseURL = baseURL
+        super.init()
+    }
+
+    func parseManifest(at url: URL) throws -> [EPUBManifestItem] {
+        guard let parser = XMLParser(contentsOf: url) else {
+            throw EPUBParserError.opfParsingFailed
+        }
+
+        manifestItems = []
+        isParsingManifest = false
+
+        parser.delegate = self
+        if parser.parse() {
+            return manifestItems
+        } else if let error = parser.parserError {
+            throw error
+        } else {
+            throw EPUBParserError.opfParseError
+        }
+    }
+
+    // MARK: - XMLParserDelegate
+
+    func parser(
+        _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]
+    ) {
+        switch elementName {
+        case "manifest":
+            isParsingManifest = true
+        case "item" where isParsingManifest:
+            // Extract required attributes
+            guard
+                let id = attributeDict["id"],
+                let href = attributeDict["href"],
+                let mediaType = attributeDict["media-type"]
+            else { return }
+
+            // Extract optional properties and create a dictionary
+            var properties: [String: String] = [:]
+            for (key, value) in attributeDict where !["id", "href", "media-type"].contains(key) {
+                properties[key] = value
+            }
+
+            // Create and add the manifest item
+            let item = EPUBManifestItem(
+                id: id,
+                href: href,
+                mediaType: mediaType,
+                properties: properties
+            )
+
+            manifestItems.append(item)
+        default:
+            break
+        }
+    }
+
+    func parser(
+        _ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        if elementName == "manifest" {
+            isParsingManifest = false
         }
     }
 }
