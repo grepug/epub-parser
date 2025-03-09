@@ -5,7 +5,7 @@ public struct EPUBManifestItem: Hashable {
     /// The unique identifier of the item
     public let id: String
     /// The path to the item
-    public let href: String
+    public let path: String
     /// The media type of the item
     public let mediaType: String
     /// Any additional properties
@@ -262,7 +262,7 @@ internal class ManifestParser: NSObject, XMLParserDelegate {
             // Create and add the manifest item
             let item = EPUBManifestItem(
                 id: id,
-                href: href,
+                path: href,
                 mediaType: mediaType,
                 properties: properties
             )

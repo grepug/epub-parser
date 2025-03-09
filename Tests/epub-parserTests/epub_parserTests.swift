@@ -27,38 +27,37 @@ struct EPUBParserTests {
         let parser = EPUBParser(epubPath: testProcessingEPUBPath, identifier: "testID")
 
         do {
-            try parser.processEPUB()  // Now returns void instead of chapters
+            try parser.processEPUB()
 
-            // Access the cached chapters through private property (using reflection for testing)
-            let chaptersProperty = Mirror(reflecting: parser).children.first(where: { $0.label == "cachedChapters" })?.value as? [EPUBChapterInfo]
-            #expect(chaptersProperty?.isEmpty == false)
+            // Access the cached chapters
+            let chapters = parser.chapters()
+            #expect(chapters.isEmpty == false)
 
             // Verify we have chapters to test
-            #expect(chaptersProperty?.isEmpty == false, "No chapters found")
+            #expect(chapters.isEmpty == false, "No chapters found")
 
             let path = "/Users/kai/Developer/packages/epub-parser/test"
             let url = URL(fileURLWithPath: path)
 
             // Test each chapter
-            if let chapters = chaptersProperty {
-                for chapter in chapters {
-                    #expect(chapter.title.isEmpty == false, "Chapter title should not be empty, id: \(chapter)")
+            for chapter in chapters {
+                #expect(chapter.manifestItems.isEmpty == false, "Chapter manifest items should not be empty, title: \(chapter.title)")
+                #expect(chapter.title.isEmpty == false, "Chapter title should not be empty, title: \(chapter.title)")
 
-                    let content = try parser.chapterContent(id: chapter.id)
-                    let html = content.html
+                let content = try parser.chapter(id: chapter.id)
+                let baseURL = parser.baseURL()
+                let html = try! content.combinedHTML(baseURL: baseURL)
 
-                    let url = url.appending(component: chapter.title)
-                    try html.write(to: url, atomically: true, encoding: .utf8)
+                let chapterUrl = url.appending(component: chapter.title)
+                try html.write(to: chapterUrl, atomically: true, encoding: .utf8)
 
-                    #expect(html.isEmpty == false, "HTML content should not be empty for chapter \(chapter.id)")
-
-                    let htmlPath = parser.htmlPathForChapter(id: chapter.id)
-                    #expect(htmlPath != nil, "HTML path should not be nil for chapter \(chapter.id)")
-                }
-
-                print("Successfully tested all \(chapters.count) chapters")
+                #expect(html.isEmpty == false, "HTML content should not be empty for chapter \(chapter.id), url: \(chapterUrl)")
             }
+
+            print("Successfully tested all \(chapters.count) chapters")
         } catch {
+            print(error)
+
             #expect(Bool(false), "EPUB processing failed with error: \(error)")
         }
 
@@ -73,14 +72,6 @@ struct EPUBParserTests {
         // Just verify this doesn't crash
         parser.cleanup()
         #expect(Bool(true))
-    }
-
-    @Test func testHtmlPathForChapter() {
-        let parser = EPUBParser(epubPath: testEPUBPath, identifier: "pathTest")
-
-        // Since we haven't processed EPUB, attempting to get the HTML path for any ID should return nil
-        #expect(parser.htmlPathForChapter(id: "ch1") == nil)
-        #expect(parser.htmlPathForChapter(id: "ch2") == nil)
     }
 
     // Helper function to create a test EPUB file
