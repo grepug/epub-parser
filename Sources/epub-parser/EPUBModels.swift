@@ -31,7 +31,7 @@ public struct EPUBChapter: Identifiable, Hashable {
                 url = URL(string: item.path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(item.path)
             }
 
-            guard url.lastPathComponent.contains(".html") else { return nil }
+            guard url.lastPathComponent.firstMatch(of: #/\.x?html?/#) != nil else { return nil }
 
             return try String(contentsOf: url, encoding: .utf8)
         }
@@ -48,6 +48,56 @@ public struct EPUBChapter: Identifiable, Hashable {
      */
     public func combinedHTML(baseURL: URL) throws -> String {
         try htmls(baseURL: baseURL).joined(separator: "\n\n")
+    }
+
+    /**
+     Creates a merged HTML document by appending the body content of subsequent HTML files
+     into the first HTML file's body.
+
+     - Parameter baseURL: The base URL used to resolve relative paths in the HTML content.
+     - Returns: A single HTML document with all body content merged into the first document.
+     - Throws: An error if the HTML content cannot be retrieved or processed.
+     */
+    public func mergedHTML(baseURL: URL) throws -> String {
+        let htmlContents = try htmls(baseURL: baseURL)
+        guard let firstHTML = htmlContents.first else {
+            return ""
+        }
+
+        if htmlContents.count == 1 {
+            return firstHTML
+        }
+
+        // Extract the body content from subsequent HTML files
+        let bodyRegex = try NSRegularExpression(pattern: "<body[^>]*>(.*?)</body>", options: [.dotMatchesLineSeparators])
+        let subsequentBodies = htmlContents.dropFirst().compactMap { html -> String? in
+            let range = NSRange(html.startIndex..<html.endIndex, in: html)
+            guard let match = bodyRegex.firstMatch(in: html, options: [], range: range) else {
+                return nil
+            }
+            guard let bodyContentRange = Range(match.range(at: 1), in: html) else {
+                return nil
+            }
+            return String(html[bodyContentRange])
+        }.joined(separator: "\n\n")
+
+        // Find where to insert the additional body content in the first HTML
+        let insertionRegex = try NSRegularExpression(pattern: "</body>", options: [])
+        let range = NSRange(firstHTML.startIndex..<firstHTML.endIndex, in: firstHTML)
+
+        guard let match = insertionRegex.firstMatch(in: firstHTML, options: [], range: range),
+            let insertionRange = Range(match.range, in: firstHTML)
+        else {
+            return firstHTML
+        }
+
+        // Insert the additional body content
+        let mergedHTML = firstHTML.replacingCharacters(
+            in: insertionRange,
+            with: "\n<!-- Content merged from additional chapter files -->\n\(subsequentBodies)\n</body>"
+        )
+
+        return mergedHTML
     }
 }
 

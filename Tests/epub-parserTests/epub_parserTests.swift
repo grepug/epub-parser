@@ -4,7 +4,7 @@ import Testing
 @testable import EPUBParser
 
 // Define a variable for test EPUB paths
-let testEPUBPath = URL(fileURLWithPath: "/Users/kai/Downloads/Steve_Jobs-by_Walter_Isaacson.epub")
+let testEPUBPath = URL(fileURLWithPath: "/Users/kai/Downloads/Elon Musk (Walter Isaacson) (Z-Library).epub")
 
 struct EPUBParserTests {
     @Test func testEPUBParserInit() {

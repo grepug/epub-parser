@@ -164,8 +164,6 @@ public class EPUBParser {
     private func parseManifestItems(opfURL: URL) throws {
         let manifestParser = ManifestParser(baseURL: opfURL.deletingLastPathComponent())
         manifestItems = try manifestParser.parseManifest(at: opfURL)
-
-        print("Manifest items: \(manifestItems)")
     }
 
     // MARK: - Manifest Item Helpers
