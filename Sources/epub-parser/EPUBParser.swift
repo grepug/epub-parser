@@ -35,6 +35,14 @@ public class EPUBParser {
         }
     }
 
+    // MARK: - Accessors
+
+    /// Get all chapters in the EPUB
+    /// - Returns: Array of EPUBChapterInfo objects
+    public func chapters() -> [EPUBChapterInfo] {
+        return cachedChapters
+    }
+
     // MARK: - Public Methods
 
     /// Process the EPUB file and extract its chapters

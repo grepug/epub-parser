@@ -179,8 +179,6 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
                 playOrder: currentPlayOrder
             )
 
-            assert(chapter.playOrder != 0, "Invalid playOrder for chapter \(chapter.title)")
-
             chapters.append(chapter)
 
             currentID = ""

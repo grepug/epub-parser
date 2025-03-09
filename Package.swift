@@ -23,7 +23,7 @@ let package = Package(
         ),
         .testTarget(
             name: "epub-parserTests",
-            dependencies: ["epub-parser"]
+            dependencies: ["EPUBParser"]
         ),
     ]
 )

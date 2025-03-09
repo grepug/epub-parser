@@ -16,6 +16,12 @@ public struct EPUBChapterInfo: Identifiable, Hashable {
     }
 }
 
+extension Array: @retroactive Identifiable where Element == EPUBChapterInfo {
+    public var id: String {
+        self.map { $0.id }.joined(separator: ",")
+    }
+}
+
 /// A struct to represent the content of a chapter, including HTML and title
 public struct EPUBChapterContent {
     public let html: String

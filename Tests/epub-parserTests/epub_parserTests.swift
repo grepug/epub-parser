@@ -1,14 +1,14 @@
 import Foundation
 import Testing
 
-@testable import epub_parser
+@testable import EPUBParser
 
 // Define a variable for test EPUB paths
-let testEPUBPath = URL(fileURLWithPath: "/Users/kai/Downloads/epub/88874.epub")
+let testEPUBPath = URL(fileURLWithPath: "/Users/kai/Downloads/Steve_Jobs-by_Walter_Isaacson.epub")
 
 struct EPUBParserTests {
     @Test func testEPUBParserInit() {
-        let parser = EPUBParser(epubPath: testEPUBPath, identifier: "testID")
+        let parser = EPUBParser(epubPath: testEPUBPath, identifier: UUID().uuidString)
 
         #expect(parser != nil)
     }
@@ -36,6 +36,9 @@ struct EPUBParserTests {
             // Verify we have chapters to test
             #expect(chaptersProperty?.isEmpty == false, "No chapters found")
 
+            let path = "/Users/kai/Developer/packages/epub-parser/test"
+            let url = URL(fileURLWithPath: path)
+
             // Test each chapter
             if let chapters = chaptersProperty {
                 for chapter in chapters {
@@ -43,6 +46,9 @@ struct EPUBParserTests {
 
                     let content = try parser.chapterContent(id: chapter.id)
                     let html = content.html
+
+                    let url = url.appending(component: chapter.title)
+                    try html.write(to: url, atomically: true, encoding: .utf8)
 
                     #expect(html.isEmpty == false, "HTML content should not be empty for chapter \(chapter.id)")
 
@@ -66,7 +72,7 @@ struct EPUBParserTests {
 
         // Just verify this doesn't crash
         parser.cleanup()
-        #expect(true)
+        #expect(Bool(true))
     }
 
     @Test func testHtmlPathForChapter() {
