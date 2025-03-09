@@ -22,7 +22,7 @@ public class EPUBParser {
     ///   - epubPath: Path to the EPUB file
     ///   - identifier: Unique identifier for this EPUB processing operation
     ///   - cacheDirectory: Optional custom directory for unzipping, defaults to documents directory
-    public init(epubPath: URL, identifier: String, cacheDirectory: URL? = nil) {
+    public init(epubPath: URL, identifier: String = UUID().uuidString, cacheDirectory: URL? = nil) {
         self.sourceEPUBPath = epubPath
         self.identifier = identifier
 
@@ -88,7 +88,7 @@ public class EPUBParser {
     /// Get the HTML content and title for a chapter
     /// - Parameter id: The chapter id
     /// - Returns: ChapterContent containing HTML content and title
-    public func chapterContent(id: String) throws -> ChapterContent {
+    public func chapterContent(id: String) throws -> EPUBChapterContent {
         guard let chapter = cachedChapters.first(where: { $0.id == id }) else {
             throw EPUBParserError.chapterNotFound(id: id)
         }
@@ -98,7 +98,7 @@ public class EPUBParser {
         }
 
         let htmlContent = try String(contentsOf: htmlPath, encoding: .utf8)
-        return ChapterContent(html: htmlContent, info: chapter)
+        return EPUBChapterContent(html: htmlContent, info: chapter)
     }
 
     /// Clean up unzipped content to free disk space

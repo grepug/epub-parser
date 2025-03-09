@@ -17,7 +17,7 @@ public struct EPUBChapterInfo: Identifiable, Hashable {
 }
 
 /// A struct to represent the content of a chapter, including HTML and title
-public struct ChapterContent {
+public struct EPUBChapterContent {
     public let html: String
     public let info: EPUBChapterInfo
 }

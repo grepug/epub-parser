@@ -24,7 +24,6 @@ struct EPUBParserTests {
             return
         }
 
-        // let parser = EPUBParserUtil(epubPath: testProcessingEPUBPath, identifier: "testProcessing")
         let parser = EPUBParser(epubPath: testProcessingEPUBPath, identifier: "testID")
 
         do {
