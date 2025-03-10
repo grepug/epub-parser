@@ -36,6 +36,10 @@ public class EPUBParser {
         }
     }
 
+    deinit {
+        cleanup()
+    }
+
     // MARK: - Accessors
 
     /// Get all chapters in the EPUB
@@ -121,7 +125,12 @@ public class EPUBParser {
 
     /// Clean up unzipped content to free disk space
     public func cleanup() {
-        try? fileManager.removeItem(at: unzipDestination)
+        do {
+            try fileManager.removeItem(at: unzipDestination)
+        } catch {
+            print("Error cleaning up EPUB unzip destination: \(error)")
+            assertionFailure()
+        }
     }
 
     // MARK: - Private Methods
