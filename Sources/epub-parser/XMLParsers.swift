@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents an item in the EPUB manifest
-public struct EPUBManifestItem: Hashable {
+public struct EPUBManifestItem: Hashable, Codable {
     /// The unique identifier of the item
     public let id: String
     /// The path to the item
@@ -121,7 +121,7 @@ internal class OPFParser: NSObject, XMLParserDelegate {
 
 /// Parser for toc.ncx
 internal class TOCNCXParser: NSObject, XMLParserDelegate {
-    private var chapters: [EPUBChapterInfo] = []
+    private var chapters: [EPUBChapter] = []
     private var currentElement = ""
     private var currentID = ""
     private var currentTitle = ""
@@ -130,7 +130,7 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
     private var isParsingNavLabel = false
     private var isParsingText = false
 
-    func parseNCX(at url: URL) throws -> [EPUBChapterInfo] {
+    func parseNCX(at url: URL) throws -> [EPUBChapter] {
         guard let parser = XMLParser(contentsOf: url) else {
             throw EPUBParserError.ncxParsingFailed
         }
@@ -184,11 +184,11 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
         case "navPoint":
             guard !currentID.isEmpty else { return }
 
-            let chapter = EPUBChapterInfo(
+            let chapter = EPUBChapter(
                 id: currentID,
                 title: currentTitle.trimmingCharacters(in: .whitespacesAndNewlines),
-                contentPath: currentContentSrc,
-                playOrder: currentPlayOrder
+                playOrder: currentPlayOrder,
+                path: currentContentSrc
             )
 
             chapters.append(chapter)

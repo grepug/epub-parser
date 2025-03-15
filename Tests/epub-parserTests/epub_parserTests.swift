@@ -4,7 +4,7 @@ import Testing
 @testable import EPUBParser
 
 // Define a variable for test EPUB paths
-let testEPUBPath = URL(fileURLWithPath: "/Users/kai/Downloads/Elon Musk (Walter Isaacson) (Z-Library).epub")
+let testEPUBPath = URL(fileURLWithPath: "/Users/kai/Downloads/debugEpub/29 Why We Sleep Unlocking the Power of Sleep and Dreams (Matthew Walker).epub")
 
 struct EPUBParserTests {
     @Test func testEPUBParserInit() {
@@ -41,8 +41,11 @@ struct EPUBParserTests {
 
             // Test each chapter
             for chapter in chapters {
+                print("chapter items: \(chapter.manifestItems.count)")
+
                 #expect(chapter.manifestItems.isEmpty == false, "Chapter manifest items should not be empty, title: \(chapter.title)")
                 #expect(chapter.title.isEmpty == false, "Chapter title should not be empty, title: \(chapter.title)")
+                #expect(chapter.path.isEmpty == false, "Chapter src should not be empty, title: \(chapter.title)")
 
                 let content = try parser.chapter(id: chapter.id)
                 let baseURL = parser.baseURL()

@@ -5,8 +5,19 @@ public struct EPUBChapter: Identifiable, Hashable {
     public let id: String
     public let title: String
     public let playOrder: Int
+    /// The source path of the chapter in the EPUB
+    public let path: String
     /// All manifest items associated with this chapter
-    public let manifestItems: [EPUBManifestItem]
+    public var manifestItems: [EPUBManifestItem]
+
+    /// Initialize a complete chapter with manifest items
+    public init(id: String, title: String, playOrder: Int, path: String, manifestItems: [EPUBManifestItem] = []) {
+        self.id = id
+        self.title = title
+        self.playOrder = playOrder
+        self.path = path
+        self.manifestItems = manifestItems
+    }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)

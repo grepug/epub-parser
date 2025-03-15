@@ -14,7 +14,6 @@ public class EPUBParser {
     private var tocURL: URL? = nil
 
     private var cachedChapters: [EPUBChapter] = []
-    private var manifestItems: [EPUBManifestItem] = []
 
     // MARK: - Initialization
 
@@ -48,61 +47,75 @@ public class EPUBParser {
         return cachedChapters
     }
 
-    /// Get all manifest items in the EPUB
-    /// - Returns: Array of EPUBManifestItem objects
-    public func manifest() -> [EPUBManifestItem] {
-        return manifestItems
-    }
-
     // MARK: - Public Methods
 
     /// Process the EPUB file and extract its chapters
     /// - Returns: Array of EPUBChapter objects representing the chapters
     public func processEPUB() throws {
-        // Step 1: Unzip the EPUB if needed
+        // Step 1: Unzip the EPUB file if not already unzipped
+        // This extracts the EPUB contents to the designated directory
         try unzipIfNeeded()
 
-        // Step 2: Locate the content.opf file
+        // Step 2: Locate the content.opf file by parsing container.xml
+        // container.xml indicates where the primary OPF file is located
         let containerXML = unzipDestination.appendingPathComponent("META-INF/container.xml")
         guard let contentOPFPath = parseContainerXML(at: containerXML) else {
             throw EPUBParserError.contentOPFNotFound
         }
 
-        // Step 3: Set the OPF root and find toc.ncx
+        // Step 3: Set the OPF root directory as base for relative paths
+        // and locate the toc.ncx file which contains the table of contents
         opfRootURL = contentOPFPath.deletingLastPathComponent()
         tocURL = try findTocNCX(opfURL: contentOPFPath)
 
-        // Step 4: Parse manifest items
-        try parseManifestItems(opfURL: contentOPFPath)
+        // Step 4: Parse all manifest items from the OPF file
+        // These represent all resources (HTML files, images, etc.) in the EPUB
+        let manifestItems = try parseManifestItems(opfURL: contentOPFPath)
 
-        // Step 5: Parse toc.ncx and get chapters
+        // Step 5: Parse the table of contents to get chapter information
         guard let tocPath = tocURL else {
             throw EPUBParserError.tocNCXNotFound
         }
 
-        let chapterInfos = try parseChapters(at: tocPath)
+        // Get basic chapter information from the NCX file
+        let basicChapters = try parseChapters(at: tocPath)
 
-        // Convert chapter infos to full chapters with manifest items
+        // Step 6: Enhance basic chapters with their associated manifest items
+        // This creates a hierarchical structure connecting chapters to their content
         var chapters: [EPUBChapter] = []
-        for chapterInfo in chapterInfos {
-            // Find manifest items for this chapter
-            let items = manifestItemsForChapter(chapterInfo)
 
-            guard !items.isEmpty else {
-                print("No manifest items found for chapter \(chapterInfo.id)")
-                continue
+        for (index, chapter) in basicChapters.enumerated() {
+            // Look ahead to find the next chapter boundary
+            let nextChapter = basicChapters.element(at: index + 1)
+            var chapter = chapter
+            // var items: [EPUBManifestItem] = []
+
+            // Find the starting manifest item for this chapter
+            if var j = manifestItems.firstIndex(where: { $0.path == chapter.path }) {
+                chapter.manifestItems.append(manifestItems[j])
+
+                // Add all subsequent items until the next chapter's starting item
+                while j < manifestItems.count - 1 {
+                    j += 1
+
+                    if manifestItems[j].path == nextChapter?.path {
+                        break
+                    }
+
+                    chapter.manifestItems.append(manifestItems[j])
+                }
             }
 
-            let chapter = EPUBChapter(
-                id: chapterInfo.id,
-                title: chapterInfo.title,
-                playOrder: chapterInfo.playOrder,
-                manifestItems: items
-            )
+            // Skip chapters with no associated content
+            guard !chapter.manifestItems.isEmpty else {
+                print("No manifest items found for chapter \(chapter.id)")
+                continue
+            }
 
             chapters.append(chapter)
         }
 
+        // Store the processed chapters in the cache
         cachedChapters = chapters
     }
 
@@ -125,12 +138,7 @@ public class EPUBParser {
 
     /// Clean up unzipped content to free disk space
     public func cleanup() {
-        do {
-            try fileManager.removeItem(at: unzipDestination)
-        } catch {
-            print("Error cleaning up EPUB unzip destination: \(error)")
-            assertionFailure()
-        }
+        try? fileManager.removeItem(at: unzipDestination)
     }
 
     // MARK: - Private Methods
@@ -165,74 +173,14 @@ public class EPUBParser {
         return URL(string: ncxPath, relativeTo: rootURL) ?? rootURL.appendingPathComponent(ncxPath)
     }
 
-    private func parseChapters(at tocURL: URL) throws -> [EPUBChapterInfo] {
+    private func parseChapters(at tocURL: URL) throws -> [EPUBChapter] {
         let parser = TOCNCXParser()
         return try parser.parseNCX(at: tocURL)
     }
 
-    private func parseManifestItems(opfURL: URL) throws {
+    private func parseManifestItems(opfURL: URL) throws -> [EPUBManifestItem] {
         let manifestParser = ManifestParser(baseURL: opfURL.deletingLastPathComponent())
-        manifestItems = try manifestParser.parseManifest(at: opfURL)
-    }
-
-    // MARK: - Manifest Item Helpers
-
-    /// Find all manifest items associated with a chapter
-    /// - Parameter chapterInfo: The temporary chapter info to find manifest items for
-    /// - Returns: Array of manifest items belonging to this chapter
-    private func manifestItemsForChapter(_ chapterInfo: EPUBChapterInfo) -> [EPUBManifestItem] {
-        // Find the starting manifest item that corresponds to this chapter's content path
-        let chapterContentPath = chapterInfo.contentPath
-
-        // Extract just the filename from the content path, as manifest items often use just the filename
-        let chapterFilename = chapterContentPath.components(separatedBy: "/").last ?? chapterContentPath
-
-        // Find the starting index
-        guard
-            let startIndex = manifestItems.firstIndex(where: { item in
-                return item.path.hasSuffix(chapterFilename)
-            })
-        else {
-            return []
-        }
-
-        // Find the ending index (the next chapter's content path, if any)
-        var endIndex = manifestItems.count
-
-        // Find the next chapter in reading order
-        let allChapterInfos = try? parseChapters(at: tocURL!)  // Get the original ordered list
-        if let currentIndex = allChapterInfos?.firstIndex(where: { $0.id == chapterInfo.id }),
-            let nextChapter = allChapterInfos?.element(at: currentIndex + 1)
-        {
-            let nextFilename = nextChapter.contentPath.components(separatedBy: "/").last ?? nextChapter.contentPath
-
-            if let nextIndex = manifestItems.firstIndex(where: { item in
-                return item.path.hasSuffix(nextFilename)
-            }) {
-                endIndex = nextIndex
-            }
-        }
-
-        // Return the slice of manifest items that belong to this chapter
-        return Array(manifestItems[startIndex..<endIndex])
-    }
-}
-
-// Temporary struct for parsing before conversion to EPUBChapter
-internal struct EPUBChapterInfo: Identifiable, Hashable {
-    let id: String
-    let title: String
-    let contentPath: String
-    let playOrder: Int
-
-    var identifier: String { id }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-
-    static func == (lhs: EPUBChapterInfo, rhs: EPUBChapterInfo) -> Bool {
-        lhs.id == rhs.id
+        return try manifestParser.parseManifest(at: opfURL)
     }
 }
 
