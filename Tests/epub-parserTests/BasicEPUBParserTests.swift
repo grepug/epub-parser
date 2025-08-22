@@ -44,7 +44,7 @@ struct BasicEPUBParserTests {
         do {
             try await parser.processEPUB()
         } catch {
-            Issue.record("Failed to process EPUB: \(error.localizedDescription)")
+            Issue.record("Failed to process EPUB: \(String(describing: error))")
             return
         }
 
@@ -72,7 +72,7 @@ struct BasicEPUBParserTests {
                 print("  ✓ Chapter \(index + 1): '\(chapter.title)' (\(chapterContent.manifestItems.count) items)")
 
             } catch {
-                Issue.record("Failed to process chapter '\(chapter.title)': \(error.localizedDescription)")
+                Issue.record("Failed to process chapter '\(chapter.title)': \(String(describing: error))")
             }
         }
 

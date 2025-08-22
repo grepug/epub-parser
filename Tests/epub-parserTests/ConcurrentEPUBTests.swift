@@ -194,7 +194,7 @@ struct ConcurrentEPUBTests {
                             validChapters += 1
                         }
                     } catch {
-                        print("    ⚠️ Chapter '\(chapter.title)' content error: \(error.localizedDescription)")
+                        print("    ⚠️ Chapter '\(chapter.title)' content error: \(String(describing: error))")
                     }
                 }
 
@@ -208,7 +208,7 @@ struct ConcurrentEPUBTests {
                 }
 
             } catch {
-                print("  ❌ Processing failed: \(error.localizedDescription)")
+                print("  ❌ Processing failed: \(String(describing: error))")
                 testResults.append((fileName, 0, false))
             }
         }

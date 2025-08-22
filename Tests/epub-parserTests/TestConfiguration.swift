@@ -186,7 +186,7 @@ func testSingleEPUB(file: URL, identifier: String, testDir: URL) async -> EPUBTe
             chapterCount: 0,
             epubFormat: "",
             fragmentChapters: 0,
-            error: error.localizedDescription
+            error: String(describing: error)
         )
     }
 }

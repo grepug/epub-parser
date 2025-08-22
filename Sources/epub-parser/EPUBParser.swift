@@ -233,8 +233,65 @@ public actor EPUBParser {
             at: unzipDestination,
             withIntermediateDirectories: true)
 
-        // Unzip the EPUB file
-        try fileManager.unzipItem(at: sourceEPUBPath, to: unzipDestination)
+        do {
+            // Try system unarchiver first (more tolerant of minor issues)
+            try fileManager.unzipItem(at: sourceEPUBPath, to: unzipDestination)
+        } catch {
+            print("⚠️ System unarchiver failed: \(String(describing: error))")
+            print("🔧 Attempting fallback to ZIPFoundation...")
+
+            // Clean up any partial extraction
+            try? fileManager.removeItem(at: unzipDestination)
+            try fileManager.createDirectory(at: unzipDestination, withIntermediateDirectories: true)
+
+            // Fallback to ZIPFoundation
+            try unzipWithZIPFoundation()
+        }
+    }
+
+    private func unzipWithZIPFoundation() throws {
+        do {
+            let archive = try Archive(url: sourceEPUBPath, accessMode: .read)
+
+            // Extract all entries with error tolerance
+            var extractedCount = 0
+            var totalCount = 0
+
+            for entry in archive {
+                totalCount += 1
+                do {
+                    _ = try archive.extract(entry, to: unzipDestination.appendingPathComponent(entry.path))
+                    extractedCount += 1
+                } catch {
+                    print("⚠️ Failed to extract '\(entry.path)': \(String(describing: error))")
+                    // Continue with other files - don't fail the entire operation
+                    continue
+                }
+            }
+
+            print("📦 ZIPFoundation extraction: \(extractedCount)/\(totalCount) files extracted")
+
+            // Check if we got the essential EPUB files
+            let essentialFiles = ["META-INF/container.xml", "mimetype"]
+            let missingEssential = essentialFiles.filter { file in
+                !fileManager.fileExists(atPath: unzipDestination.appendingPathComponent(file).path)
+            }
+
+            if !missingEssential.isEmpty {
+                print("❌ Missing essential files: \(missingEssential)")
+                throw EPUBParserError.contentOPFNotFound
+            }
+
+            if extractedCount == 0 {
+                throw EPUBParserError.opfParsingFailed
+            }
+
+            print("✅ ZIPFoundation fallback successful")
+
+        } catch {
+            print("❌ ZIPFoundation extraction failed: \(String(describing: error))")
+            throw error
+        }
     }
 
     private func parseContainerXML(at url: URL) -> URL? {

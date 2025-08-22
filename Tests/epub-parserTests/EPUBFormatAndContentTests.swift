@@ -79,7 +79,7 @@ struct EPUBFormatAndContentTests {
                 print("📚 \(fileName): \(detectedFormat)")
 
             } catch {
-                formatResults.append((fileName, "Failed: \(error.localizedDescription)"))
+                formatResults.append((fileName, "Failed: \(String(describing: error))"))
                 print("❌ \(fileName): Processing failed")
             }
         }
@@ -186,7 +186,7 @@ struct EPUBFormatAndContentTests {
 
             } catch {
                 Issue.record("Content merging failed for chapter '\(chapter.title)': \(error)")
-                print("     ❌ Content merging failed: \(error.localizedDescription)")
+                print("     ❌ Content merging failed: \(String(describing: error))")
             }
         }
 
