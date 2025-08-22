@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents an item in the EPUB manifest
-public struct EPUBManifestItem: Hashable, Codable {
+public struct EPUBManifestItem: Hashable, Codable, Sendable {
     /// The unique identifier of the item
     public let id: String
     /// The path to the item
@@ -77,6 +77,16 @@ internal class OPFParser: NSObject, XMLParserDelegate {
             return path
         }
 
+        // Look for EPUB3 navigation document marked with properties="nav"
+        if let navPath = items["__nav__"] {
+            return navPath
+        }
+
+        // Look for EPUB3 navigation document by filename pattern
+        for (_, path) in items where path.contains("nav.") && (path.hasSuffix(".xhtml") || path.hasSuffix(".html")) {
+            return path
+        }
+
         // Otherwise look for an item with media-type application/x-dtbncx+xml
         for (_, path) in items where path.hasSuffix(".ncx") {
             return path
@@ -98,6 +108,11 @@ internal class OPFParser: NSObject, XMLParserDelegate {
         case "item" where parsingManifest:
             if let id = attributeDict["id"], let href = attributeDict["href"] {
                 items[id] = href
+                // Check if this is an EPUB3 nav document
+                if let properties = attributeDict["properties"], properties.contains("nav") {
+                    // Store this as a potential nav document
+                    items["__nav__"] = href
+                }
             }
         default:
             break
@@ -201,6 +216,94 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
             isParsingNavLabel = false
         case "text":
             isParsingText = false
+        default:
+            break
+        }
+    }
+}
+
+/// Parser for EPUB3 navigation documents (nav.xhtml)
+internal class EPUB3NavParser: NSObject, XMLParserDelegate {
+    private var chapters: [EPUBChapter] = []
+    private var currentElement = ""
+    private var currentTitle = ""
+    private var currentHref = ""
+    private var isParsingTOC = false
+    private var isParsingLink = false
+    private var chapterIndex = 0
+
+    func parseNav(at url: URL) throws -> [EPUBChapter] {
+        guard let parser = XMLParser(contentsOf: url) else {
+            throw EPUBParserError.ncxParsingFailed
+        }
+
+        chapters = []
+        isParsingTOC = false
+        chapterIndex = 0
+        parser.delegate = self
+
+        if parser.parse() {
+            return chapters
+        } else if let error = parser.parserError {
+            throw error
+        } else {
+            throw EPUBParserError.ncxParseError
+        }
+    }
+
+    // MARK: - XMLParserDelegate
+
+    func parser(
+        _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]
+    ) {
+        currentElement = elementName
+
+        switch elementName {
+        case "nav":
+            // Check if this is the TOC navigation
+            if let type = attributeDict["epub:type"], type == "toc" {
+                isParsingTOC = true
+            }
+        case "a" where isParsingTOC:
+            isParsingLink = true
+            currentHref = attributeDict["href"] ?? ""
+            currentTitle = ""
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if isParsingLink {
+            currentTitle += string
+        }
+    }
+
+    func parser(
+        _ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        switch elementName {
+        case "nav":
+            isParsingTOC = false
+        case "a" where isParsingTOC && isParsingLink:
+            isParsingLink = false
+
+            guard !currentHref.isEmpty && !currentTitle.isEmpty else { return }
+
+            chapterIndex += 1
+            let chapter = EPUBChapter(
+                id: "chapter_\(chapterIndex)",
+                title: currentTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+                playOrder: chapterIndex,
+                path: currentHref
+            )
+
+            chapters.append(chapter)
+
+            currentTitle = ""
+            currentHref = ""
         default:
             break
         }

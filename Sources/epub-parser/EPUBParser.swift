@@ -2,7 +2,7 @@ import Foundation
 import ZIPFoundation
 
 /// Standalone utility for parsing EPUB files
-public class EPUBParser {
+public actor EPUBParser {
     // MARK: - Constants & Properties
 
     private let fileManager = FileManager.default
@@ -88,17 +88,23 @@ public class EPUBParser {
             // Look ahead to find the next chapter boundary
             let nextChapter = basicChapters.element(at: index + 1)
             var chapter = chapter
-            // var items: [EPUBManifestItem] = []
+
+            // Normalize chapter path for comparison
+            let normalizedChapterPath = normalizePathForComparison(chapter.path)
+            let nextChapterPath = nextChapter.map { normalizePathForComparison($0.path) }
 
             // Find the starting manifest item for this chapter
-            if var j = manifestItems.firstIndex(where: { $0.path == chapter.path }) {
+            if var j = manifestItems.firstIndex(where: {
+                normalizePathForComparison($0.path) == normalizedChapterPath
+            }) {
                 chapter.manifestItems.append(manifestItems[j])
 
                 // Add all subsequent items until the next chapter's starting item
                 while j < manifestItems.count - 1 {
                     j += 1
 
-                    if manifestItems[j].path == nextChapter?.path {
+                    let normalizedManifestPath = normalizePathForComparison(manifestItems[j].path)
+                    if let nextPath = nextChapterPath, normalizedManifestPath == nextPath {
                         break
                     }
 
@@ -108,7 +114,8 @@ public class EPUBParser {
 
             // Skip chapters with no associated content
             guard !chapter.manifestItems.isEmpty else {
-                print("No manifest items found for chapter \(chapter.id)")
+                print("No manifest items found for chapter \(chapter.id) with path '\(chapter.path)'")
+                print("Available manifest paths: \(manifestItems.prefix(5).map { $0.path })")
                 continue
             }
 
@@ -137,8 +144,8 @@ public class EPUBParser {
     }
 
     /// Clean up unzipped content to free disk space
-    public func cleanup() {
-        try? fileManager.removeItem(at: unzipDestination)
+    nonisolated public func cleanup() {
+        try? FileManager.default.removeItem(at: unzipDestination)
     }
 
     // MARK: - Private Methods
@@ -174,13 +181,34 @@ public class EPUBParser {
     }
 
     private func parseChapters(at tocURL: URL) throws -> [EPUBChapter] {
-        let parser = TOCNCXParser()
-        return try parser.parseNCX(at: tocURL)
+        // Determine if this is an NCX file or EPUB3 navigation document
+        if tocURL.pathExtension.lowercased() == "ncx" {
+            // Use NCX parser for EPUB2
+            let parser = TOCNCXParser()
+            return try parser.parseNCX(at: tocURL)
+        } else {
+            // Use navigation parser for EPUB3
+            let parser = EPUB3NavParser()
+            return try parser.parseNav(at: tocURL)
+        }
     }
 
     private func parseManifestItems(opfURL: URL) throws -> [EPUBManifestItem] {
         let manifestParser = ManifestParser(baseURL: opfURL.deletingLastPathComponent())
         return try manifestParser.parseManifest(at: opfURL)
+    }
+
+    /// Normalizes paths for comparison by removing fragments and standardizing separators
+    private func normalizePathForComparison(_ path: String) -> String {
+        // Remove URL fragments (everything after #)
+        let pathWithoutFragment = path.components(separatedBy: "#").first ?? path
+
+        // Remove leading slashes and normalize separators
+        return
+            pathWithoutFragment
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
     }
 }
 

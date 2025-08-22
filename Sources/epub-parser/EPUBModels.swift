@@ -1,7 +1,7 @@
 import Foundation
 
 /// A model to represent an EPUB chapter with its content
-public struct EPUBChapter: Identifiable, Hashable {
+public struct EPUBChapter: Identifiable, Hashable, Sendable {
     public let id: String
     public let title: String
     public let playOrder: Int
@@ -50,9 +50,9 @@ public struct EPUBChapter: Identifiable, Hashable {
 
     /**
      Combines all HTML content into a single string.
-
+    
      This method concatenates all HTML content from the EPUB files with line breaks between each content section.
-
+    
      - Parameter baseURL: The base URL used to resolve relative paths in the HTML content.
      - Returns: A single string containing all combined HTML content.
      - Throws: An error if the HTML content cannot be retrieved or processed.
@@ -64,7 +64,7 @@ public struct EPUBChapter: Identifiable, Hashable {
     /**
      Creates a merged HTML document by appending the body content of subsequent HTML files
      into the first HTML file's body.
-
+    
      - Parameter baseURL: The base URL used to resolve relative paths in the HTML content.
      - Returns: A single HTML document with all body content merged into the first document.
      - Throws: An error if the HTML content cannot be retrieved or processed.
