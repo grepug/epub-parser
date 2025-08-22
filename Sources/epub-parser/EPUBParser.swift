@@ -84,38 +84,110 @@ public actor EPUBParser {
         // This creates a hierarchical structure connecting chapters to their content
         var chapters: [EPUBChapter] = []
 
+        // Filter manifest items to only HTML/XHTML files for chapter content
+        let htmlManifestItems = manifestItems.filter { item in
+            ["application/xhtml+xml", "text/html"].contains(item.mediaType) || item.path.hasSuffix(".html") || item.path.hasSuffix(".xhtml") || item.path.hasSuffix(".htm")
+        }
+
         for (index, chapter) in basicChapters.enumerated() {
-            // Look ahead to find the next chapter boundary
-            let nextChapter = basicChapters.element(at: index + 1)
             var chapter = chapter
 
-            // Normalize chapter path for comparison
-            let normalizedChapterPath = normalizePathForComparison(chapter.path)
-            let nextChapterPath = nextChapter.map { normalizePathForComparison($0.path) }
+            // Get the chapter's primary file path (may include fragment identifier)
+            let chapterPath = chapter.path
+            let chapterPathWithoutFragment = chapterPath.components(separatedBy: "#").first ?? chapterPath
 
-            // Find the starting manifest item for this chapter
-            if var j = manifestItems.firstIndex(where: {
-                normalizePathForComparison($0.path) == normalizedChapterPath
-            }) {
-                chapter.manifestItems.append(manifestItems[j])
-
-                // Add all subsequent items until the next chapter's starting item
-                while j < manifestItems.count - 1 {
-                    j += 1
-
-                    let normalizedManifestPath = normalizePathForComparison(manifestItems[j].path)
-                    if let nextPath = nextChapterPath, normalizedManifestPath == nextPath {
-                        break
-                    }
-
-                    chapter.manifestItems.append(manifestItems[j])
-                }
+            // Method 1: Direct path matching
+            // Find manifest items that match this chapter's path exactly
+            let exactMatchItems = htmlManifestItems.filter { item in
+                normalizePathForComparison(item.path) == normalizePathForComparison(chapterPathWithoutFragment)
             }
 
-            // Skip chapters with no associated content
+            if !exactMatchItems.isEmpty {
+                chapter.manifestItems = exactMatchItems
+                print("📄 Chapter '\(chapter.title)': Found exact match - \(exactMatchItems.count) items")
+            } else {
+                // Method 2: Sequential range mapping for chapters that span multiple files
+                // This handles cases where chapters span across multiple HTML files in sequence
+
+                let normalizedChapterPath = normalizePathForComparison(chapterPathWithoutFragment)
+
+                // Find the starting position for this chapter
+                if let startIndex = htmlManifestItems.firstIndex(where: { item in
+                    normalizePathForComparison(item.path) == normalizedChapterPath
+                }) {
+
+                    // Determine the ending position by looking at the next chapter's start
+                    let nextChapter = basicChapters.element(at: index + 1)
+                    let endIndex: Int
+
+                    if let nextChapter = nextChapter {
+                        let nextChapterPathWithoutFragment = nextChapter.path.components(separatedBy: "#").first ?? nextChapter.path
+                        let normalizedNextPath = normalizePathForComparison(nextChapterPathWithoutFragment)
+
+                        // Find where the next chapter starts
+                        if let nextStartIndex = htmlManifestItems.firstIndex(where: { item in
+                            normalizePathForComparison(item.path) == normalizedNextPath
+                        }) {
+                            endIndex = nextStartIndex
+                        } else {
+                            // Next chapter not found in sequence, assume this chapter has only its primary file
+                            endIndex = startIndex + 1
+                        }
+                    } else {
+                        // This is the last chapter, include all remaining HTML files
+                        endIndex = htmlManifestItems.count
+                    }
+
+                    // Add all HTML files from start to end (exclusive)
+                    let rangeItems = Array(htmlManifestItems[startIndex..<endIndex])
+                    chapter.manifestItems = rangeItems
+
+                    print("📚 Chapter '\(chapter.title)': Range mapping (\(startIndex)..<\(endIndex)) - \(rangeItems.count) items")
+                    if rangeItems.count > 1 {
+                        print("    Multi-file chapter detected:")
+                        for (i, item) in rangeItems.enumerated() {
+                            print("      [\(i+1)] \(item.path)")
+                        }
+                    }
+
+                } else {
+                    // Method 3: Fragment-based mapping for chapters within same file
+                    // This handles cases where multiple chapters exist in the same HTML file
+                    if chapterPath.contains("#") {
+                        // This chapter references a specific section in an HTML file
+                        let baseFile = chapterPathWithoutFragment
+                        let normalizedBasePath = normalizePathForComparison(baseFile)
+
+                        if let matchingItem = htmlManifestItems.first(where: { item in
+                            normalizePathForComparison(item.path) == normalizedBasePath
+                        }) {
+                            chapter.manifestItems = [matchingItem]
+                            print("🔗 Chapter '\(chapter.title)': Fragment-based mapping - \(chapterPath)")
+                        } else {
+                            print("❌ Chapter '\(chapter.title)': Fragment base file not found - \(baseFile)")
+                            continue
+                        }
+                    } else {
+                        // Method 4: Fallback - try partial path matching
+                        let partialMatchItems = htmlManifestItems.filter { item in
+                            let itemBaseName = URL(fileURLWithPath: item.path).deletingPathExtension().lastPathComponent.lowercased()
+                            let chapterBaseName = URL(fileURLWithPath: chapterPathWithoutFragment).deletingPathExtension().lastPathComponent.lowercased()
+                            return itemBaseName.contains(chapterBaseName) || chapterBaseName.contains(itemBaseName)
+                        }
+
+                        if !partialMatchItems.isEmpty {
+                            chapter.manifestItems = partialMatchItems
+                            print("🔍 Chapter '\(chapter.title)': Partial match - \(partialMatchItems.count) items")
+                        } else {
+                            print("❌ Chapter '\(chapter.title)': No manifest items found")
+                            print("   Chapter path: '\(chapterPath)'")
+                            print("   Available HTML files: \(htmlManifestItems.prefix(3).map { $0.path })")
+                            continue
+                        }
+                    }
+                }
+            }  // Skip chapters with no associated content
             guard !chapter.manifestItems.isEmpty else {
-                print("No manifest items found for chapter \(chapter.id) with path '\(chapter.path)'")
-                print("Available manifest paths: \(manifestItems.prefix(5).map { $0.path })")
                 continue
             }
 

@@ -456,4 +456,265 @@ struct EPUBParserTests {
 
         print("✅ Format variation test completed")
     }
+
+    @Test func testChapterContentMerging() async throws {
+        // Test the HTML content merging capabilities for different chapter structures
+        guard let testEPUBPath = Self.findTestEPUBFile() else {
+            Issue.record("No test EPUB file found for content merging test")
+            return
+        }
+
+        let testDir = try Self.createTestDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: testDir)
+        }
+
+        let parser = EPUBParser(
+            epubPath: testEPUBPath,
+            identifier: "content_merging_test",
+            cacheDirectory: testDir
+        )
+
+        defer {
+            parser.cleanup()
+        }
+
+        try await parser.processEPUB()
+        let chapters = await parser.chapters()
+
+        guard !chapters.isEmpty else {
+            Issue.record("No chapters found for content merging test")
+            return
+        }
+
+        print("🧪 Testing Chapter Content Merging:")
+        print("  📚 Total chapters: \(chapters.count)")
+
+        // Test different merging strategies on the first few chapters
+        for (index, chapter) in chapters.prefix(3).enumerated() {
+            print("\n  📖 Chapter \(index + 1): '\(chapter.title)'")
+            print("     Manifest items: \(chapter.manifestItems.count)")
+
+            do {
+                let baseURL = await parser.baseURL()
+
+                // Test 1: Individual HTML retrieval
+                let htmls = try chapter.htmls(baseURL: baseURL)
+                #expect(!htmls.isEmpty, "Chapter should have at least one HTML content")
+                print("     ✅ Individual HTMLs: \(htmls.count) files")
+
+                // Test 2: Combined HTML (simple concatenation)
+                let combinedHTML = try chapter.combinedHTML(baseURL: baseURL)
+                #expect(!combinedHTML.isEmpty, "Combined HTML should not be empty")
+                print("     ✅ Combined HTML: \(combinedHTML.count) characters")
+
+                // Test 3: Merged HTML (body content merged into first document)
+                let mergedHTML = try chapter.mergedHTML(baseURL: baseURL)
+                #expect(!mergedHTML.isEmpty, "Merged HTML should not be empty")
+                print("     ✅ Merged HTML: \(mergedHTML.count) characters")
+
+                // Validate content structure
+                if htmls.count > 1 {
+                    print("     📝 Multi-file chapter detected!")
+                    print("         - Individual files: \(htmls.count)")
+                    print("         - Combined length: \(combinedHTML.count)")
+                    print("         - Merged length: \(mergedHTML.count)")
+
+                    // For multi-file chapters, merged HTML should be a proper HTML document
+                    #expect(mergedHTML.contains("<html"), "Merged HTML should contain HTML tag")
+                    #expect(mergedHTML.contains("<body"), "Merged HTML should contain body tag")
+                    #expect(mergedHTML.contains("</body>"), "Merged HTML should have closing body tag")
+                    #expect(mergedHTML.contains("</html>"), "Merged HTML should have closing HTML tag")
+
+                    print("     ✅ HTML structure validation passed")
+                } else {
+                    print("     📄 Single-file chapter")
+                    // For single-file chapters, combined and merged should be identical
+                    #expect(combinedHTML == mergedHTML, "Single-file chapter: combined and merged HTML should be identical")
+                }
+
+                // Basic content validation
+                let hasTextContent =
+                    combinedHTML.range(of: #"<p[^>]*>.*?</p>"#, options: .regularExpression) != nil || combinedHTML.range(of: #"<div[^>]*>.*?</div>"#, options: .regularExpression) != nil
+
+                if hasTextContent {
+                    print("     ✅ Text content detected")
+                } else {
+                    print("     ⚠️  No obvious text content detected")
+                }
+
+            } catch {
+                Issue.record("Content merging failed for chapter '\(chapter.title)': \(error)")
+                print("     ❌ Content merging failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Test edge cases with multi-file chapters
+        let multiFileChapters = chapters.filter { $0.manifestItems.count > 1 }
+        if !multiFileChapters.isEmpty {
+            print("\n  🔗 Multi-file chapters found: \(multiFileChapters.count)")
+            for chapter in multiFileChapters.prefix(2) {
+                print("     • '\(chapter.title)': \(chapter.manifestItems.count) files")
+                for (i, item) in chapter.manifestItems.enumerated() {
+                    print("       [\(i+1)] \(item.path) (\(item.mediaType))")
+                }
+            }
+        } else {
+            print("\n  📄 All chapters are single-file chapters")
+        }
+
+        // Test chapters with fragment identifiers
+        let fragmentChapters = chapters.filter { $0.path.contains("#") }
+        if !fragmentChapters.isEmpty {
+            print("\n  🔗 Fragment-based chapters found: \(fragmentChapters.count)")
+            for chapter in fragmentChapters.prefix(3) {
+                print("     • '\(chapter.title)': \(chapter.path)")
+            }
+        } else {
+            print("\n  📄 No fragment-based chapters detected")
+        }
+
+        print("\n✅ Chapter content merging test completed successfully")
+    }
+
+    @Test func testSpecificEPUB_TonyFadell() async throws {
+        // Test the specific EPUB file mentioned by the user
+        let epubPath = "/Users/kai/Downloads/epub_test/Build An Unorthodox Guide to Making Things Worth Making (Tony Fadell) (Z-Library).epub"
+        let epubURL = URL(fileURLWithPath: epubPath)
+
+        guard FileManager.default.fileExists(atPath: epubPath) else {
+            Issue.record("Tony Fadell EPUB file not found at: \(epubPath)")
+            return
+        }
+
+        // Validate it's a proper EPUB file
+        guard Self.isValidEPUBFile(epubURL) else {
+            Issue.record("File is not a valid EPUB: \(epubPath)")
+            return
+        }
+
+        let testDir = try Self.createTestDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: testDir)
+        }
+
+        let parser = EPUBParser(
+            epubPath: epubURL,
+            identifier: "tony_fadell_test",
+            cacheDirectory: testDir
+        )
+
+        defer {
+            parser.cleanup()
+        }
+
+        print("📖 Testing Tony Fadell EPUB: 'Build An Unorthodox Guide to Making Things Worth Making'")
+
+        do {
+            try await parser.processEPUB()
+            let chapters = await parser.chapters()
+
+            print("📚 Successfully processed EPUB with \(chapters.count) chapters")
+
+            #expect(!chapters.isEmpty, "EPUB should contain at least one chapter")
+
+            // Analyze the chapter structure
+            let singleFileChapters = chapters.filter { $0.manifestItems.count == 1 }
+            let multiFileChapters = chapters.filter { $0.manifestItems.count > 1 }
+            let fragmentChapters = chapters.filter { $0.path.contains("#") }
+
+            print("📊 Chapter Structure Analysis:")
+            print("   • Total chapters: \(chapters.count)")
+            print("   • Single-file chapters: \(singleFileChapters.count)")
+            print("   • Multi-file chapters: \(multiFileChapters.count)")
+            print("   • Fragment-based chapters: \(fragmentChapters.count)")
+
+            // Show first few chapters
+            print("\n📋 Chapter List (first 10):")
+            for (index, chapter) in chapters.prefix(10).enumerated() {
+                let manifestCount = chapter.manifestItems.count
+                let fragmentIndicator = chapter.path.contains("#") ? " (fragment)" : ""
+                print("   \(index + 1). '\(chapter.title)' (\(manifestCount) items)\(fragmentIndicator)")
+
+                if manifestCount > 1 {
+                    print("      Multi-file chapter with \(manifestCount) files:")
+                    for (i, item) in chapter.manifestItems.enumerated() {
+                        print("        [\(i+1)] \(item.path)")
+                    }
+                }
+            }
+
+            if chapters.count > 10 {
+                print("   ... and \(chapters.count - 10) more chapters")
+            }
+
+            // Test content extraction for first few chapters
+            print("\n🧪 Content Validation:")
+            for (index, chapter) in chapters.prefix(3).enumerated() {
+                do {
+                    let baseURL = await parser.baseURL()
+                    let combinedHTML = try chapter.combinedHTML(baseURL: baseURL)
+                    let mergedHTML = try chapter.mergedHTML(baseURL: baseURL)
+
+                    #expect(!combinedHTML.isEmpty, "Chapter '\(chapter.title)' should have non-empty HTML content")
+                    #expect(!mergedHTML.isEmpty, "Chapter '\(chapter.title)' should have non-empty merged HTML")
+
+                    print("   ✅ Chapter \(index + 1): '\(chapter.title)'")
+                    print("      - Combined HTML: \(combinedHTML.count) characters")
+                    print("      - Merged HTML: \(mergedHTML.count) characters")
+
+                    // Check for actual text content
+                    let hasTextContent =
+                        combinedHTML.range(of: #"<p[^>]*>.*?</p>"#, options: .regularExpression) != nil || combinedHTML.range(of: #"<div[^>]*>.*?</div>"#, options: .regularExpression) != nil
+
+                    if hasTextContent {
+                        print("      - Text content: ✅ Detected")
+                    } else {
+                        print("      - Text content: ⚠️  No obvious text content")
+                    }
+
+                } catch {
+                    print("   ❌ Chapter \(index + 1): Content extraction failed - \(error)")
+                }
+            }
+
+            // Special analysis for multi-file chapters
+            if !multiFileChapters.isEmpty {
+                print("\n🔗 Multi-file Chapter Analysis:")
+                for chapter in multiFileChapters.prefix(3) {
+                    print("   📚 '\(chapter.title)': \(chapter.manifestItems.count) files")
+                    for (i, item) in chapter.manifestItems.enumerated() {
+                        print("      [\(i+1)] \(item.path) (\(item.mediaType))")
+                    }
+
+                    // Test the HTML merging for multi-file chapters
+                    do {
+                        let baseURL = await parser.baseURL()
+                        let htmls = try chapter.htmls(baseURL: baseURL)
+                        let combined = try chapter.combinedHTML(baseURL: baseURL)
+                        let merged = try chapter.mergedHTML(baseURL: baseURL)
+
+                        print("      Content lengths: Individual[\(htmls.map{$0.count})] Combined[\(combined.count)] Merged[\(merged.count)]")
+
+                        // Validate HTML structure for merged content
+                        if merged.contains("<html") && merged.contains("</html>") {
+                            print("      ✅ Merged HTML has proper document structure")
+                        } else {
+                            print("      ⚠️  Merged HTML may not have complete document structure")
+                        }
+
+                    } catch {
+                        print("      ❌ Multi-file content merging failed: \(error)")
+                    }
+                }
+            }
+
+            print("\n✅ Tony Fadell EPUB test completed successfully!")
+            print("   Total chapters processed: \(chapters.count)")
+
+        } catch {
+            Issue.record("Failed to process Tony Fadell EPUB: \(error.localizedDescription)")
+            print("❌ Processing failed: \(error.localizedDescription)")
+        }
+    }
 }
