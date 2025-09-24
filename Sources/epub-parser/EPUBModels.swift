@@ -28,9 +28,11 @@ public struct EPUBChapter: Identifiable, Hashable, Sendable {
     }
 
     /// Get the HTML content for this chapter
-    /// - Parameter baseURL: The base URL to resolve relative paths against
+    /// - Parameters:
+    ///   - baseURL: The base URL to resolve relative paths against
+    ///   - cleanLineBreaks: Whether to remove unnecessary line breaks from HTML elements
     /// - Returns: Array of HTML content strings for all manifest items
-    public func htmls(baseURL: URL) throws -> [String] {
+    public func htmls(baseURL: URL, cleanLineBreaks: Bool = true) throws -> [String] {
         try manifestItems.compactMap { item -> String? in
             let url: URL
 
@@ -44,7 +46,13 @@ public struct EPUBChapter: Identifiable, Hashable, Sendable {
 
             guard url.lastPathComponent.firstMatch(of: #/\.x?html?/#) != nil else { return nil }
 
-            return try String(contentsOf: url, encoding: .utf8)
+            var content = try String(contentsOf: url, encoding: .utf8)
+
+            if cleanLineBreaks {
+                content = try cleanHTMLLineBreaks(content)
+            }
+
+            return content
         }
     }
 
@@ -53,24 +61,28 @@ public struct EPUBChapter: Identifiable, Hashable, Sendable {
     
      This method concatenates all HTML content from the EPUB files with line breaks between each content section.
     
-     - Parameter baseURL: The base URL used to resolve relative paths in the HTML content.
+     - Parameters:
+       - baseURL: The base URL used to resolve relative paths in the HTML content.
+       - cleanLineBreaks: Whether to remove unnecessary line breaks from HTML elements
      - Returns: A single string containing all combined HTML content.
      - Throws: An error if the HTML content cannot be retrieved or processed.
      */
-    public func combinedHTML(baseURL: URL) throws -> String {
-        try htmls(baseURL: baseURL).joined(separator: "\n\n")
+    public func combinedHTML(baseURL: URL, cleanLineBreaks: Bool = true) throws -> String {
+        try htmls(baseURL: baseURL, cleanLineBreaks: cleanLineBreaks).joined(separator: "\n\n")
     }
 
     /**
      Creates a merged HTML document by appending the body content of subsequent HTML files
      into the first HTML file's body.
     
-     - Parameter baseURL: The base URL used to resolve relative paths in the HTML content.
+     - Parameters:
+       - baseURL: The base URL used to resolve relative paths in the HTML content.
+       - cleanLineBreaks: Whether to remove unnecessary line breaks from HTML elements
      - Returns: A single HTML document with all body content merged into the first document.
      - Throws: An error if the HTML content cannot be retrieved or processed.
      */
-    public func mergedHTML(baseURL: URL) throws -> String {
-        let htmlContents = try htmls(baseURL: baseURL)
+    public func mergedHTML(baseURL: URL, cleanLineBreaks: Bool = true) throws -> String {
+        let htmlContents = try htmls(baseURL: baseURL, cleanLineBreaks: cleanLineBreaks)
         guard let firstHTML = htmlContents.first else {
             return ""
         }
@@ -110,6 +122,87 @@ public struct EPUBChapter: Identifiable, Hashable, Sendable {
 
         return mergedHTML
     }
+}
+
+/// Utility function to clean unnecessary line breaks from HTML content
+private func cleanHTMLLineBreaks(_ content: String) throws -> String {
+    var cleanedContent = content
+
+    // Elements where we want to remove line breaks from content
+    let elements = ["p", "span", "em", "strong", "i", "b", "h1", "h2", "h3", "h4", "h5", "h6", "title", "a", "li", "td", "th"]
+
+    // First, protect content that should preserve line breaks (like <pre>, <code> blocks)
+    var protectedRanges: [(original: String, placeholder: String)] = []
+    let protectedElements = ["pre", "code", "script", "style"]
+
+    for element in protectedElements {
+        let pattern = "<\(element)[^>]*>.*?</\(element)>"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            continue
+        }
+
+        let matches = regex.matches(in: cleanedContent, options: [], range: NSRange(location: 0, length: cleanedContent.utf16.count))
+        for (index, match) in matches.enumerated().reversed() {
+            if let range = Range(match.range, in: cleanedContent) {
+                let original = String(cleanedContent[range])
+                let placeholder = "___PROTECTED_\(element.uppercased())_\(index)___"
+                protectedRanges.append((original: original, placeholder: placeholder))
+                cleanedContent.replaceSubrange(range, with: placeholder)
+            }
+        }
+    }
+
+    // Clean line breaks in target elements
+    for element in elements {
+        // Pattern to match opening tag (with optional attributes), content, and closing tag
+        let pattern = "<(\(element))([^>]*)>(.*?)</\(element)>"
+
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            continue
+        }
+
+        // Replace matches
+        let range = NSRange(location: 0, length: cleanedContent.utf16.count)
+        let matches = regex.matches(in: cleanedContent, options: [], range: range)
+
+        // Process matches in reverse order to avoid index shifting
+        for match in matches.reversed() {
+            guard let fullRange = Range(match.range, in: cleanedContent),
+                let tagRange = Range(match.range(at: 1), in: cleanedContent),
+                let attributesRange = Range(match.range(at: 2), in: cleanedContent),
+                let contentRange = Range(match.range(at: 3), in: cleanedContent)
+            else {
+                continue
+            }
+
+            let tagName = String(cleanedContent[tagRange])
+            let attributes = String(cleanedContent[attributesRange])
+            let elementContent = String(cleanedContent[contentRange])
+
+            // Clean the content: remove line breaks and normalize whitespace
+            let cleaned =
+                elementContent
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .replacingOccurrences(of: "\t", with: " ")
+                // Replace multiple spaces with single space
+                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+
+            // Reconstruct the element
+            let replacement = "<\(tagName)\(attributes)>\(cleaned)</\(tagName)>"
+            cleanedContent.replaceSubrange(fullRange, with: replacement)
+        }
+    }
+
+    // Restore protected content
+    for protected in protectedRanges.reversed() {
+        if let range = cleanedContent.range(of: protected.placeholder) {
+            cleanedContent.replaceSubrange(range, with: protected.original)
+        }
+    }
+
+    return cleanedContent
 }
 
 extension Array: @retroactive Identifiable where Element == EPUBChapter {
