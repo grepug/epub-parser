@@ -58,8 +58,34 @@ public actor EPUBParser {
 
         // Step 2: Locate the content.opf file by parsing container.xml
         // container.xml indicates where the primary OPF file is located
-        let containerXML = unzipDestination.appendingPathComponent("META-INF/container.xml")
-        guard let contentOPFPath = parseContainerXML(at: containerXML) else {
+        var actualBaseURL = unzipDestination
+        var containerXML = unzipDestination.appendingPathComponent("META-INF/container.xml")
+
+        // Check if container.xml exists at the expected location
+        if !fileManager.fileExists(atPath: containerXML.path) {
+            // Handle EPUBs with nested directory structures
+            do {
+                let contents = try fileManager.contentsOfDirectory(atPath: unzipDestination.path)
+
+                // Look for a single subdirectory that might contain the EPUB structure
+                for item in contents {
+                    let itemURL = unzipDestination.appendingPathComponent(item)
+                    var isDirectory: ObjCBool = false
+                    if fileManager.fileExists(atPath: itemURL.path, isDirectory: &isDirectory) && isDirectory.boolValue {
+                        let nestedContainerXML = itemURL.appendingPathComponent("META-INF/container.xml")
+                        if fileManager.fileExists(atPath: nestedContainerXML.path) {
+                            actualBaseURL = itemURL
+                            containerXML = nestedContainerXML
+                            break
+                        }
+                    }
+                }
+            } catch {
+                // Continue with original path if directory listing fails
+            }
+        }
+
+        guard let contentOPFPath = parseContainerXML(at: containerXML, baseURL: actualBaseURL) else {
             throw EPUBParserError.contentOPFNotFound
         }
 
@@ -340,11 +366,11 @@ public actor EPUBParser {
         }
     }
 
-    private func parseContainerXML(at url: URL) -> URL? {
+    private func parseContainerXML(at url: URL, baseURL: URL? = nil) -> URL? {
         guard fileManager.fileExists(atPath: url.path) else { return nil }
 
         let parser = ContainerXMLParser()
-        return parser.parseContainerXML(at: url, baseURL: unzipDestination)
+        return parser.parseContainerXML(at: url, baseURL: baseURL ?? unzipDestination)
     }
 
     private func findTocNCX(opfURL: URL) throws -> URL {

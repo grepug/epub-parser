@@ -43,36 +43,55 @@ struct EPUBFormatAndContentTests {
                 // Try to determine EPUB version by checking the structure
                 let tempEPUBDir = testDir.appendingPathComponent("epub_format_test_\(index)")
 
-                let hasNCX = FileManager.default.fileExists(atPath: tempEPUBDir.appendingPathComponent("toc.ncx").path)
-                let hasNavXHTML = FileManager.default.fileExists(atPath: tempEPUBDir.appendingPathComponent("nav.xhtml").path)
-
                 var detectedFormat = "Unknown"
+                var hasNCX = false
+                var hasNavXHTML = false
 
-                if hasNavXHTML {
+                // Look for NCX and nav.xhtml files in common locations
+                let commonDirs = ["", "OPS", "OEBPS", "content"]
+
+                for subDir in commonDirs {
+                    let searchDir = subDir.isEmpty ? tempEPUBDir : tempEPUBDir.appendingPathComponent(subDir)
+
+                    if !hasNCX && FileManager.default.fileExists(atPath: searchDir.appendingPathComponent("toc.ncx").path) {
+                        hasNCX = true
+                    }
+
+                    if !hasNavXHTML && FileManager.default.fileExists(atPath: searchDir.appendingPathComponent("nav.xhtml").path) {
+                        hasNavXHTML = true
+                    }
+
+                    // Also check for content.opf to determine version
+                    if detectedFormat == "Unknown" {
+                        do {
+                            let dirContents = try FileManager.default.contentsOfDirectory(at: searchDir, includingPropertiesForKeys: nil)
+                            let opfFiles = dirContents.filter { $0.pathExtension == "opf" }
+
+                            for opfFile in opfFiles {
+                                let opfContent = try String(contentsOf: opfFile)
+                                if opfContent.contains("version=\"3.0\"") {
+                                    detectedFormat = "EPUB3 (OPF v3.0)"
+                                    epub3Count += 1
+                                    break
+                                } else if opfContent.contains("version=\"2.0\"") {
+                                    detectedFormat = "EPUB2 (OPF v2.0)"
+                                    epub2Count += 1
+                                    break
+                                }
+                            }
+                        } catch {
+                            // Continue checking other directories
+                        }
+                    }
+                }
+
+                // Determine format based on found files (override OPF-based detection if files found)
+                if hasNavXHTML && detectedFormat.contains("Unknown") {
                     detectedFormat = "EPUB3 (nav.xhtml)"
                     epub3Count += 1
-                } else if hasNCX {
+                } else if hasNCX && detectedFormat.contains("Unknown") {
                     detectedFormat = "EPUB2 (toc.ncx)"
                     epub2Count += 1
-                } else {
-                    // Check OPF for version information
-                    do {
-                        let opfFiles = try FileManager.default.contentsOfDirectory(at: tempEPUBDir, includingPropertiesForKeys: nil)
-                            .filter { $0.pathExtension == "opf" }
-
-                        if let opfFile = opfFiles.first {
-                            let opfContent = try String(contentsOf: opfFile)
-                            if opfContent.contains("version=\"3.0\"") {
-                                detectedFormat = "EPUB3 (detected)"
-                                epub3Count += 1
-                            } else if opfContent.contains("version=\"2.0\"") {
-                                detectedFormat = "EPUB2 (detected)"
-                                epub2Count += 1
-                            }
-                        }
-                    } catch {
-                        print("    ⚠️ Could not analyze OPF for \(fileName)")
-                    }
                 }
 
                 formatResults.append((fileName, detectedFormat))

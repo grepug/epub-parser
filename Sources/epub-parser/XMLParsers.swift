@@ -22,12 +22,56 @@ internal class ContainerXMLParser: NSObject, XMLParserDelegate {
         self.baseURL = baseURL
         contentOPFPath = nil
 
-        guard let parser = XMLParser(contentsOf: url) else { return nil }
+        guard let parser = XMLParser(contentsOf: url) else {
+            return nil
+        }
         parser.delegate = self
         parser.parse()
 
-        guard let path = contentOPFPath else { return nil }
-        return URL(string: path, relativeTo: baseURL)
+        guard let path = contentOPFPath else {
+            return nil
+        }
+
+        // First try the direct path
+        let directURL = URL(string: path, relativeTo: baseURL)
+        if let directURL = directURL, FileManager.default.fileExists(atPath: directURL.path) {
+            return directURL
+        }
+
+        // Handle EPUBs with nested directory structures
+        // Look for the OPF file in subdirectories if direct path doesn't work
+        if let subdirURL = findOPFInSubdirectories(path: path, baseURL: baseURL) {
+            return subdirURL
+        }
+
+        return directURL
+    }
+
+    private func findOPFInSubdirectories(path: String, baseURL: URL) -> URL? {
+        let fileManager = FileManager.default
+
+        // Get all subdirectories in the base directory
+        guard let enumerator = fileManager.enumerator(at: baseURL, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            return nil
+        }
+
+        for case let dirURL as URL in enumerator {
+            // Check if this is a directory
+            guard let resourceValues = try? dirURL.resourceValues(forKeys: [.isDirectoryKey]),
+                resourceValues.isDirectory == true
+            else {
+                continue
+            }
+
+            // Check if the OPF file exists in this subdirectory
+            let candidateURL = dirURL.appendingPathComponent(path)
+
+            if fileManager.fileExists(atPath: candidateURL.path) {
+                return candidateURL
+            }
+        }
+
+        return nil
     }
 
     func parser(

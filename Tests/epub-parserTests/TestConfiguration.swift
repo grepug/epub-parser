@@ -20,11 +20,21 @@ struct TestConfiguration {
         // "/Users/kai/Downloads/Atomic Habits (James Clear) (Z-Library).epub",
         // "/Users/kai/Downloads/Elon Musk (Walter Isaacson) (Z-Library).epub",
 
-        "/Users/kai/Downloads/Call+Me+by+Your+Name.epub"
+        // EPUBs from /Users/kai/Downloads/epub folder
+        "/Users/kai/Downloads/epub/14238.epub",
+        "/Users/kai/Downloads/epub/14598.epub",
+        "/Users/kai/Downloads/epub/19547.epub",
+        "/Users/kai/Downloads/epub/25230.epub",
+        "/Users/kai/Downloads/epub/4954.epub",
+        "/Users/kai/Downloads/epub/88874.epub",
+        "/Users/kai/Downloads/epub/Call+Me+by+Your+Name.epub",
+        "/Users/kai/Downloads/epub/EBook_1753371031.epub",
+        "/Users/kai/Downloads/epub/habits.epub",
     ]
 
     /// Additional directories to search for EPUB files (if auto-discovery is enabled)
     static let autoDiscoveryDirectories: [String] = [
+        "/Users/kai/Downloads/epub",  // Primary test folder
         "/Users/kai/Downloads/epub_test",
         "/Users/kai/Downloads",
         "/Users/kai/Documents",
@@ -42,7 +52,7 @@ struct TestConfiguration {
     }()
 
     /// Maximum number of EPUB files to test concurrently (to avoid resource exhaustion)
-    static let maxConcurrentTests: Int = 8
+    static let maxConcurrentTests: Int = 12
 
     // MARK: - Utility Methods
 
