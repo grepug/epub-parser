@@ -103,8 +103,54 @@ public actor EPUBParser {
             }
 
             if !exactMatchItems.isEmpty {
-                chapter.manifestItems = exactMatchItems
-                print("📄 Chapter '\(chapter.title)': Found exact match - \(exactMatchItems.count) items")
+                // Check if this might be a multi-file EPUB where chapters span multiple files
+                // Heuristic: If we have many more HTML files than chapters, try range mapping
+                let isLikelyMultiFileStructure = htmlManifestItems.count > basicChapters.count * 3
+
+                if isLikelyMultiFileStructure && exactMatchItems.count == 1 {
+                    // Try to expand this chapter to include subsequent files until the next chapter
+                    let normalizedChapterPath = normalizePathForComparison(chapterPathWithoutFragment)
+
+                    if let startIndex = htmlManifestItems.firstIndex(where: { item in
+                        normalizePathForComparison(item.path) == normalizedChapterPath
+                    }) {
+                        let nextChapter = basicChapters.element(at: index + 1)
+                        let endIndex: Int
+
+                        if let nextChapter = nextChapter {
+                            let nextChapterPathWithoutFragment = nextChapter.path.components(separatedBy: "#").first ?? nextChapter.path
+                            let normalizedNextPath = normalizePathForComparison(nextChapterPathWithoutFragment)
+
+                            if let nextStartIndex = htmlManifestItems.firstIndex(where: { item in
+                                normalizePathForComparison(item.path) == normalizedNextPath
+                            }) {
+                                endIndex = nextStartIndex
+                            } else {
+                                endIndex = startIndex + 1  // Conservative fallback
+                            }
+                        } else {
+                            // Last chapter - include remaining files, but be conservative
+                            endIndex = min(startIndex + 10, htmlManifestItems.count)  // Limit to 10 files max
+                        }
+
+                        if endIndex > startIndex + 1 {
+                            // We found additional content, use range mapping
+                            let rangeItems = Array(htmlManifestItems[startIndex..<endIndex])
+                            chapter.manifestItems = rangeItems
+                            print("📚 Chapter '\(chapter.title)': Extended range (\(startIndex)..<\(endIndex)) - \(rangeItems.count) items")
+                        } else {
+                            // Use exact match
+                            chapter.manifestItems = exactMatchItems
+                            print("📄 Chapter '\(chapter.title)': Found exact match - \(exactMatchItems.count) items")
+                        }
+                    } else {
+                        chapter.manifestItems = exactMatchItems
+                        print("📄 Chapter '\(chapter.title)': Found exact match - \(exactMatchItems.count) items")
+                    }
+                } else {
+                    chapter.manifestItems = exactMatchItems
+                    print("📄 Chapter '\(chapter.title)': Found exact match - \(exactMatchItems.count) items")
+                }
             } else {
                 // Method 2: Sequential range mapping for chapters that span multiple files
                 // This handles cases where chapters span across multiple HTML files in sequence

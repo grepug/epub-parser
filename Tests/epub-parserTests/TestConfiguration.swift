@@ -12,13 +12,15 @@ struct TestConfiguration {
     /// Add your EPUB file paths here to include them in concurrent testing
     static let configuredTestEPUBs: [String] = [
         // Working EPUB files only
-        "/Users/kai/Downloads/epub_test/Build An Unorthodox Guide to Making Things Worth Making (Tony Fadell) (Z-Library).epub",
-        "/Users/kai/Downloads/epub_test/Data science from scratch the 1 data science guide for everything a data scientist needs to know Python, linear algebra,... (Cooper, Steven) (Z-Library).epub",
+        // "/Users/kai/Downloads/epub_test/Build An Unorthodox Guide to Making Things Worth Making (Tony Fadell) (Z-Library).epub",
+        // "/Users/kai/Downloads/epub_test/Data science from scratch the 1 data science guide for everything a data scientist needs to know Python, linear algebra,... (Cooper, Steven) (Z-Library).epub",
 
         // Corrupted files - commented out until re-downloaded
         // "/Users/kai/Downloads/epub_test/The 7 Habits of Highly Effective People- Powerful Lessons in -- Stephen R. Covey -- 2017 -- Infographics -- 9781633533103 -- cf7f01f2c4c337eec89aafe62c32ee62 -- Anna's Archive.epub",
         // "/Users/kai/Downloads/Atomic Habits (James Clear) (Z-Library).epub",
         // "/Users/kai/Downloads/Elon Musk (Walter Isaacson) (Z-Library).epub",
+
+        "/Users/kai/Downloads/Call+Me+by+Your+Name.epub"
     ]
 
     /// Additional directories to search for EPUB files (if auto-discovery is enabled)

@@ -179,9 +179,10 @@ struct ConcurrentEPUBTests {
 
                 print("  ✅ Successfully processed: \(chapterCount) chapters")
 
-                // Test a few chapters for content
+                // Test a few chapters for content and word count
                 let chaptersToTest = min(3, chapterCount)
                 var validChapters = 0
+                var totalWords = 0
 
                 for i in 0..<chaptersToTest {
                     let chapter = chapters[i]
@@ -191,7 +192,14 @@ struct ConcurrentEPUBTests {
                         let html = try chapterContent.combinedHTML(baseURL: baseURL)
 
                         if !html.isEmpty {
-                            validChapters += 1
+                            let wordCount = try chapterContent.wordCount(baseURL: baseURL)
+                            totalWords += wordCount
+
+                            if wordCount >= 100 {
+                                validChapters += 1
+                            } else {
+                                print("    ⚠️ Chapter '\(chapter.title)' has only \(wordCount) words (<100)")
+                            }
                         }
                     } catch {
                         print("    ⚠️ Chapter '\(chapter.title)' content error: \(String(describing: error))")
@@ -202,9 +210,10 @@ struct ConcurrentEPUBTests {
                 testResults.append((fileName, chapterCount, success))
 
                 if success {
-                    print("  ✅ Content validation: \(validChapters)/\(chaptersToTest) chapters valid")
+                    print("  ✅ Content validation: \(validChapters)/\(chaptersToTest) chapters valid (≥100 words each)")
+                    print("  📝 Total words in tested chapters: \(totalWords)")
                 } else {
-                    print("  ❌ Content validation failed")
+                    print("  ❌ Content validation failed - no chapters meet minimum word count")
                 }
 
             } catch {

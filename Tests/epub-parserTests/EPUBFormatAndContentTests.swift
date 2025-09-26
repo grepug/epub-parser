@@ -184,6 +184,21 @@ struct EPUBFormatAndContentTests {
                     print("     ⚠️  No obvious text content detected")
                 }
 
+                // Validate word count for content quality
+                do {
+                    let wordCount = try chapter.wordCount(baseURL: baseURL)
+                    print("     📝 Word count: \(wordCount)")
+
+                    if wordCount >= 100 {
+                        print("     ✅ Sufficient content (≥100 words)")
+                    } else {
+                        print("     ⚠️  Limited content (<100 words)")
+                        Issue.record("Chapter '\(chapter.title)' has only \(wordCount) words, expected at least 100")
+                    }
+                } catch {
+                    print("     ❌ Word count failed: \(String(describing: error))")
+                }
+
             } catch {
                 Issue.record("Content merging failed for chapter '\(chapter.title)': \(error)")
                 print("     ❌ Content merging failed: \(String(describing: error))")

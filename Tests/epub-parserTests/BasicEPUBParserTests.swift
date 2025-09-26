@@ -69,7 +69,19 @@ struct BasicEPUBParserTests {
                 let html = try chapterContent.combinedHTML(baseURL: baseURL)
                 #expect(!html.isEmpty, "Chapter '\(chapter.title)' should generate non-empty HTML")
 
-                print("  ✓ Chapter \(index + 1): '\(chapter.title)' (\(chapterContent.manifestItems.count) items)")
+                // Verify chapter has meaningful content (at least 5 words, with expectation of 100+ for real content)
+                let wordCount = try chapterContent.wordCount(baseURL: baseURL)
+                #expect(wordCount >= 5, "Chapter '\(chapter.title)' should have at least some content (actual: \(wordCount) words)")
+
+                if wordCount >= 100 {
+                    print("  📚 Chapter meets recommended minimum (100+ words)")
+                } else if wordCount >= 20 {
+                    print("  ⚠️  Chapter has limited content (\(wordCount) words, recommended: 100+)")
+                } else {
+                    print("  ⚠️  Chapter appears to be a stub or title only (\(wordCount) words)")
+                }
+
+                print("  ✓ Chapter \(index + 1): '\(chapter.title)' (\(chapterContent.manifestItems.count) items, \(wordCount) words)")
 
             } catch {
                 Issue.record("Failed to process chapter '\(chapter.title)': \(String(describing: error))")
