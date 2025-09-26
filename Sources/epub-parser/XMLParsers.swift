@@ -48,30 +48,8 @@ internal class ContainerXMLParser: NSObject, XMLParserDelegate {
     }
 
     private func findOPFInSubdirectories(path: String, baseURL: URL) -> URL? {
-        let fileManager = FileManager.default
-
-        // Get all subdirectories in the base directory
-        guard let enumerator = fileManager.enumerator(at: baseURL, includingPropertiesForKeys: [.isDirectoryKey]) else {
-            return nil
-        }
-
-        for case let dirURL as URL in enumerator {
-            // Check if this is a directory
-            guard let resourceValues = try? dirURL.resourceValues(forKeys: [.isDirectoryKey]),
-                resourceValues.isDirectory == true
-            else {
-                continue
-            }
-
-            // Check if the OPF file exists in this subdirectory
-            let candidateURL = dirURL.appendingPathComponent(path)
-
-            if fileManager.fileExists(atPath: candidateURL.path) {
-                return candidateURL
-            }
-        }
-
-        return nil
+        let directoryResolver = EPUBDirectoryResolver()
+        return directoryResolver.findOPFInSubdirectories(opfPath: path, baseURL: baseURL)
     }
 
     func parser(

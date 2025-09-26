@@ -61,29 +61,12 @@ public actor EPUBParser {
         var actualBaseURL = unzipDestination
         var containerXML = unzipDestination.appendingPathComponent("META-INF/container.xml")
 
-        // Check if container.xml exists at the expected location
-        if !fileManager.fileExists(atPath: containerXML.path) {
-            // Handle EPUBs with nested directory structures
-            do {
-                let contents = try fileManager.contentsOfDirectory(atPath: unzipDestination.path)
+        // Resolve the EPUB directory structure using the dedicated resolver
+        let directoryResolver = EPUBDirectoryResolver()
+        let structureResult = directoryResolver.resolveEPUBStructure(from: unzipDestination)
 
-                // Look for a single subdirectory that might contain the EPUB structure
-                for item in contents {
-                    let itemURL = unzipDestination.appendingPathComponent(item)
-                    var isDirectory: ObjCBool = false
-                    if fileManager.fileExists(atPath: itemURL.path, isDirectory: &isDirectory) && isDirectory.boolValue {
-                        let nestedContainerXML = itemURL.appendingPathComponent("META-INF/container.xml")
-                        if fileManager.fileExists(atPath: nestedContainerXML.path) {
-                            actualBaseURL = itemURL
-                            containerXML = nestedContainerXML
-                            break
-                        }
-                    }
-                }
-            } catch {
-                // Continue with original path if directory listing fails
-            }
-        }
+        actualBaseURL = structureResult.baseURL
+        containerXML = structureResult.containerXMLURL
 
         guard let contentOPFPath = parseContainerXML(at: containerXML, baseURL: actualBaseURL) else {
             throw EPUBParserError.contentOPFNotFound

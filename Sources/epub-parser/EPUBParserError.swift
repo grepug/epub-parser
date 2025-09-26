@@ -11,6 +11,8 @@ public enum EPUBParserError: LocalizedError {
     case ncxParsingFailed
     case ncxParseError
     case opfParseError
+    case missingContainerXML
+    case invalidEPUBStructure(String)
 
     public var errorDescription: String? {
         switch self {
@@ -32,6 +34,10 @@ public enum EPUBParserError: LocalizedError {
             return "Failed to parse NCX file"
         case .opfParseError:
             return "Failed to parse OPF file"
+        case .missingContainerXML:
+            return "Missing or unreadable container.xml file"
+        case .invalidEPUBStructure(let description):
+            return "Invalid EPUB structure: \(description)"
         }
     }
 }
