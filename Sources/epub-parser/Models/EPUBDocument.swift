@@ -48,12 +48,25 @@ extension EPUBDocument {
 
     /// Get the full URL for a manifest item
     public func url(for item: EPUBManifestItem) -> URL {
-        URL(string: item.path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(item.path)
+        baseURL.appending(path: item.path)
     }
 
     /// Get the full URL for a TOC item
     public func url(for tocItem: EPUBTOCItem) -> URL {
-        URL(string: tocItem.href, relativeTo: baseURL) ?? baseURL.appendingPathComponent(tocItem.href)
+        // Handle hrefs that may contain fragments (e.g., "chapter1.html#section2")
+        if let hashIndex = tocItem.href.firstIndex(of: "#") {
+            let pathPart = String(tocItem.href[..<hashIndex])
+            let fragmentPart = String(tocItem.href[tocItem.href.index(after: hashIndex)...])
+            
+            var urlComponents = URLComponents()
+            urlComponents.scheme = baseURL.scheme
+            urlComponents.path = baseURL.appendingPathComponent(pathPart).path
+            urlComponents.fragment = fragmentPart
+            
+            return urlComponents.url ?? baseURL.appendingPathComponent(tocItem.href)
+        }
+        
+        return baseURL.appendingPathComponent(tocItem.href)
     }
 
     /// Get a flattened array of all TOC items (including nested ones)

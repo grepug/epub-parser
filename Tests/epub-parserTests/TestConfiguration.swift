@@ -7,6 +7,7 @@ struct TestConfiguration {
     /// Add specific EPUB file paths here for testing
     static let configuredTestEPUBs: [String] = [
         // Example: "/Users/username/Downloads/sample.epub"
+        "/Users/kai/Downloads/epub/Build.epub"
     ]
 
     /// Test directories to scan for EPUB files
