@@ -9,7 +9,7 @@ public struct EPUBDocument: Hashable, Sendable {
     public let manifest: [EPUBManifestItem]
 
     /// Spine items (reading order)
-    public let spine: [EPUBSpineItem]
+    public let spineItems: [EPUBSpineItem]
 
     /// Table of contents (hierarchical navigation structure)
     public let tableOfContents: [EPUBTOCItem]
@@ -21,13 +21,13 @@ public struct EPUBDocument: Hashable, Sendable {
     public init(
         metadata: EPUBMetadata,
         manifest: [EPUBManifestItem],
-        spine: [EPUBSpineItem],
+        spineItems: [EPUBSpineItem],
         tableOfContents: [EPUBTOCItem],
         baseURL: URL
     ) {
         self.metadata = metadata
         self.manifest = manifest
-        self.spine = spine
+        self.spineItems = spineItems
         self.tableOfContents = tableOfContents
         self.baseURL = baseURL
     }
@@ -57,15 +57,15 @@ extension EPUBDocument {
         if let hashIndex = tocItem.href.firstIndex(of: "#") {
             let pathPart = String(tocItem.href[..<hashIndex])
             let fragmentPart = String(tocItem.href[tocItem.href.index(after: hashIndex)...])
-            
+
             var urlComponents = URLComponents()
             urlComponents.scheme = baseURL.scheme
             urlComponents.path = baseURL.appendingPathComponent(pathPart).path
             urlComponents.fragment = fragmentPart
-            
+
             return urlComponents.url ?? baseURL.appendingPathComponent(tocItem.href)
         }
-        
+
         return baseURL.appendingPathComponent(tocItem.href)
     }
 
@@ -74,8 +74,13 @@ extension EPUBDocument {
         EPUBTOCItem.flattenAll(tableOfContents)
     }
 
+    /// Alias for spineItems for backward compatibility
+    public var spine: [EPUBSpineItem] {
+        spineItems
+    }
+
     /// Get only the spine items that are part of linear reading order
     public var linearSpineItems: [EPUBSpineItem] {
-        spine.filter { $0.linear }
+        spineItems.filter { $0.linear }
     }
 }

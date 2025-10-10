@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents an item in the EPUB spine (reading order)
-public struct EPUBSpineItem: Identifiable, Hashable, Sendable {
+public struct EPUBSpineItem: Identifiable, Hashable, Sendable, Codable {
     /// Unique identifier for this spine item
     public let id: String
 

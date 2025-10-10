@@ -134,7 +134,7 @@ public actor EPUBParser {
         let document = EPUBDocument(
             metadata: metadata,
             manifest: manifestItems,
-            spine: spineItems,
+            spineItems: spineItems,
             tableOfContents: tableOfContents,
             baseURL: opfRootURL ?? unzipDestination
         )
