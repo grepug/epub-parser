@@ -158,7 +158,8 @@ internal class OPFParser: NSObject, XMLParserDelegate {
 
 /// Parser for toc.ncx
 internal class TOCNCXParser: NSObject, XMLParserDelegate {
-    private var chapters: [EPUBChapter] = []
+    private var tocItems: [EPUBTOCItem] = []
+    private var navPointStack: [(item: EPUBTOCItem, depth: Int)] = []
     private var currentElement = ""
     private var currentID = ""
     private var currentTitle = ""
@@ -166,17 +167,20 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
     private var currentPlayOrder = 0
     private var isParsingNavLabel = false
     private var isParsingText = false
+    private var currentDepth = 0
 
-    func parseNCX(at url: URL) throws -> [EPUBChapter] {
+    func parseNCX(at url: URL) throws -> [EPUBTOCItem] {
         guard let parser = XMLParser(contentsOf: url) else {
             throw EPUBParserError.ncxParsingFailed
         }
 
-        chapters = []
+        tocItems = []
+        navPointStack = []
+        currentDepth = 0
         parser.delegate = self
 
         if parser.parse() {
-            return chapters
+            return tocItems
         } else if let error = parser.parserError {
             throw error
         } else {
@@ -194,6 +198,7 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
 
         switch elementName {
         case "navPoint":
+            currentDepth += 1
             currentID = attributeDict["id"] ?? ""
             currentPlayOrder = Int(attributeDict["playOrder"] ?? "0") ?? 0
         case "navLabel":
@@ -219,25 +224,46 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
     ) {
         switch elementName {
         case "navPoint":
-            guard !currentID.isEmpty else { return }
+            guard !currentID.isEmpty else {
+                currentDepth -= 1
+                return
+            }
 
-            let chapter = EPUBChapter(
+            var tocItem = EPUBTOCItem(
                 id: currentID,
                 title: currentTitle.trimmingCharacters(in: .whitespacesAndNewlines),
                 playOrder: currentPlayOrder,
-                path: currentContentSrc
+                href: currentContentSrc,
+                children: []
             )
 
-            chapters.append(chapter)
+            // Pop all children at deeper levels and add them to this item
+            while let last = navPointStack.last, last.depth > currentDepth {
+                tocItem.children.insert(navPointStack.removeLast().item, at: 0)
+            }
+
+            if currentDepth == 1 {
+                // Root level item - will be added to tocItems when we finish all nested items
+                navPointStack.append((tocItem, currentDepth))
+            } else {
+                // Nested item
+                navPointStack.append((tocItem, currentDepth))
+            }
 
             currentID = ""
             currentTitle = ""
             currentContentSrc = ""
             currentPlayOrder = 0
+            currentDepth -= 1
         case "navLabel":
             isParsingNavLabel = false
         case "text":
             isParsingText = false
+        case "ncx":
+            // At the end, gather all root level items
+            while let last = navPointStack.last, last.depth == 1 {
+                tocItems.insert(navPointStack.removeLast().item, at: 0)
+            }
         default:
             break
         }
@@ -246,26 +272,32 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
 
 /// Parser for EPUB3 navigation documents (nav.xhtml)
 internal class EPUB3NavParser: NSObject, XMLParserDelegate {
-    private var chapters: [EPUBChapter] = []
+    private var tocItems: [EPUBTOCItem] = []
+    private var navItemStack: [(item: EPUBTOCItem, depth: Int)] = []
     private var currentElement = ""
     private var currentTitle = ""
     private var currentHref = ""
     private var isParsingTOC = false
     private var isParsingLink = false
     private var chapterIndex = 0
+    private var currentDepth = 0
+    private var listDepth = 0
 
-    func parseNav(at url: URL) throws -> [EPUBChapter] {
+    func parseNav(at url: URL) throws -> [EPUBTOCItem] {
         guard let parser = XMLParser(contentsOf: url) else {
             throw EPUBParserError.ncxParsingFailed
         }
 
-        chapters = []
+        tocItems = []
+        navItemStack = []
         isParsingTOC = false
         chapterIndex = 0
+        currentDepth = 0
+        listDepth = 0
         parser.delegate = self
 
         if parser.parse() {
-            return chapters
+            return tocItems
         } else if let error = parser.parserError {
             throw error
         } else {
@@ -287,6 +319,12 @@ internal class EPUB3NavParser: NSObject, XMLParserDelegate {
             if let type = attributeDict["epub:type"], type == "toc" {
                 isParsingTOC = true
             }
+        case "ol", "ul":
+            if isParsingTOC {
+                listDepth += 1
+            }
+        case "li" where isParsingTOC:
+            currentDepth = listDepth
         case "a" where isParsingTOC:
             isParsingLink = true
             currentHref = attributeDict["href"] ?? ""
@@ -309,20 +347,34 @@ internal class EPUB3NavParser: NSObject, XMLParserDelegate {
         switch elementName {
         case "nav":
             isParsingTOC = false
+            // At the end, gather all root level items
+            while let last = navItemStack.last, last.depth == 1 {
+                tocItems.insert(navItemStack.removeLast().item, at: 0)
+            }
+        case "ol", "ul":
+            if isParsingTOC {
+                listDepth -= 1
+            }
         case "a" where isParsingTOC && isParsingLink:
             isParsingLink = false
 
             guard !currentHref.isEmpty && !currentTitle.isEmpty else { return }
 
             chapterIndex += 1
-            let chapter = EPUBChapter(
-                id: "chapter_\(chapterIndex)",
+            var tocItem = EPUBTOCItem(
+                id: "toc_\(chapterIndex)",
                 title: currentTitle.trimmingCharacters(in: .whitespacesAndNewlines),
                 playOrder: chapterIndex,
-                path: currentHref
+                href: currentHref,
+                children: []
             )
 
-            chapters.append(chapter)
+            // Pop all children at deeper levels and add them to this item
+            while let last = navItemStack.last, last.depth > currentDepth {
+                tocItem.children.insert(navItemStack.removeLast().item, at: 0)
+            }
+
+            navItemStack.append((tocItem, currentDepth))
 
             currentTitle = ""
             currentHref = ""
@@ -405,5 +457,213 @@ internal class ManifestParser: NSObject, XMLParserDelegate {
         if elementName == "manifest" {
             isParsingManifest = false
         }
+    }
+}
+
+/// Parser for EPUB spine (reading order)
+internal class SpineParser: NSObject, XMLParserDelegate {
+    private var spineItems: [EPUBSpineItem] = []
+    private var isParsingSpine = false
+    private var manifestItems: [EPUBManifestItem]
+    private var spineIndex = 0
+
+    init(manifestItems: [EPUBManifestItem]) {
+        self.manifestItems = manifestItems
+        super.init()
+    }
+
+    func parseSpine(at url: URL) throws -> [EPUBSpineItem] {
+        guard let parser = XMLParser(contentsOf: url) else {
+            throw EPUBParserError.opfParsingFailed
+        }
+
+        spineItems = []
+        isParsingSpine = false
+        spineIndex = 0
+
+        parser.delegate = self
+        if parser.parse() {
+            return spineItems
+        } else if let error = parser.parserError {
+            throw error
+        } else {
+            throw EPUBParserError.opfParseError
+        }
+    }
+
+    // MARK: - XMLParserDelegate
+
+    func parser(
+        _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]
+    ) {
+        switch elementName {
+        case "spine":
+            isParsingSpine = true
+        case "itemref" where isParsingSpine:
+            guard let idref = attributeDict["idref"] else { return }
+
+            // Find the corresponding manifest item
+            guard let manifestItem = manifestItems.first(where: { $0.id == idref }) else {
+                return
+            }
+
+            // Check if linear (default is true)
+            let linearString = attributeDict["linear"] ?? "yes"
+            let isLinear = linearString.lowercased() != "no"
+
+            let spineItem = EPUBSpineItem(
+                id: "spine_\(spineIndex)",
+                idref: idref,
+                linear: isLinear,
+                manifestItem: manifestItem
+            )
+
+            spineItems.append(spineItem)
+            spineIndex += 1
+        default:
+            break
+        }
+    }
+
+    func parser(
+        _ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        if elementName == "spine" {
+            isParsingSpine = false
+        }
+    }
+}
+
+/// Parser for EPUB metadata
+internal class MetadataParser: NSObject, XMLParserDelegate {
+    private var title: String?
+    private var creators: [String] = []
+    private var contributors: [String] = []
+    private var language: String?
+    private var identifier: String?
+    private var publisher: String?
+    private var date: String?
+    private var bookDescription: String?
+    private var subjects: [String] = []
+    private var rights: String?
+    private var type: String?
+    private var source: String?
+    private var coverage: String?
+
+    private var currentElement = ""
+    private var isParsingMetadata = false
+    private var foundText = ""
+
+    func parseMetadata(at url: URL) throws -> EPUBMetadata {
+        guard let parser = XMLParser(contentsOf: url) else {
+            throw EPUBParserError.opfParsingFailed
+        }
+
+        // Reset all properties
+        title = nil
+        creators = []
+        contributors = []
+        language = nil
+        identifier = nil
+        publisher = nil
+        date = nil
+        bookDescription = nil
+        subjects = []
+        rights = nil
+        type = nil
+        source = nil
+        coverage = nil
+        isParsingMetadata = false
+
+        parser.delegate = self
+        if parser.parse() {
+            return EPUBMetadata(
+                title: title,
+                creators: creators,
+                contributors: contributors,
+                language: language,
+                identifier: identifier,
+                publisher: publisher,
+                date: date,
+                description: bookDescription,
+                subjects: subjects,
+                rights: rights,
+                type: type,
+                source: source,
+                coverage: coverage,
+                coverImageURL: nil  // Will be set later by EPUBParser
+            )
+        } else if let error = parser.parserError {
+            throw error
+        } else {
+            throw EPUBParserError.opfParseError
+        }
+    }
+
+    // MARK: - XMLParserDelegate
+
+    func parser(
+        _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]
+    ) {
+        currentElement = elementName
+        foundText = ""
+
+        if elementName == "metadata" {
+            isParsingMetadata = true
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if isParsingMetadata {
+            foundText += string
+        }
+    }
+
+    func parser(
+        _ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        guard isParsingMetadata else { return }
+
+        let text = foundText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        switch elementName {
+        case "dc:title", "title":
+            title = text
+        case "dc:creator", "creator":
+            creators.append(text)
+        case "dc:contributor", "contributor":
+            contributors.append(text)
+        case "dc:language", "language":
+            language = text
+        case "dc:identifier", "identifier":
+            identifier = text
+        case "dc:publisher", "publisher":
+            publisher = text
+        case "dc:date", "date":
+            date = text
+        case "dc:description", "description":
+            bookDescription = text
+        case "dc:subject", "subject":
+            subjects.append(text)
+        case "dc:rights", "rights":
+            rights = text
+        case "dc:type", "type":
+            type = text
+        case "dc:source", "source":
+            source = text
+        case "dc:coverage", "coverage":
+            coverage = text
+        case "metadata":
+            isParsingMetadata = false
+        default:
+            break
+        }
+
+        foundText = ""
     }
 }

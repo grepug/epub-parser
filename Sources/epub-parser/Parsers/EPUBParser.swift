@@ -13,7 +13,7 @@ public actor EPUBParser {
     private var opfRootURL: URL? = nil
     private var tocURL: URL? = nil
 
-    private var cachedChapters: [EPUBChapter] = []
+    private var cachedDocument: EPUBDocument? = nil
 
     // MARK: - Initialization
 
@@ -41,30 +41,28 @@ public actor EPUBParser {
 
     // MARK: - Accessors
 
-    /// Get all chapters in the EPUB
-    /// - Returns: Array of EPUBChapter objects
-    public func chapters() -> [EPUBChapter] {
-        return cachedChapters
+    /// Get the parsed EPUB document
+    /// - Returns: EPUBDocument object containing all parsed information
+    public func document() -> EPUBDocument? {
+        return cachedDocument
     }
 
     // MARK: - Public Methods
 
-    /// Process the EPUB file and extract its chapters
-    /// - Returns: Array of EPUBChapter objects representing the chapters
-    public func processEPUB() throws {
+    /// Process the EPUB file and extract its structure
+    /// - Returns: EPUBDocument containing metadata, manifest, spine, and table of contents
+    @discardableResult
+    public func processEPUB() throws -> EPUBDocument {
         // Step 1: Unzip the EPUB file if not already unzipped
-        // This extracts the EPUB contents to the designated directory
         try unzipIfNeeded()
 
         // Step 2: Locate the content.opf file by parsing container.xml
-        // container.xml indicates where the primary OPF file is located
         var actualBaseURL = unzipDestination
         var containerXML = unzipDestination.appendingPathComponent("META-INF/container.xml")
 
-        // Resolve the EPUB directory structure using the dedicated resolver
+        // Resolve the EPUB directory structure
         let directoryResolver = EPUBDirectoryResolver()
         let structureResult = directoryResolver.resolveEPUBStructure(from: unzipDestination)
-
         actualBaseURL = structureResult.baseURL
         containerXML = structureResult.containerXMLURL
 
@@ -73,201 +71,62 @@ public actor EPUBParser {
         }
 
         // Step 3: Set the OPF root directory as base for relative paths
-        // and locate the toc.ncx file which contains the table of contents
         opfRootURL = contentOPFPath.deletingLastPathComponent()
-        tocURL = try findTocNCX(opfURL: contentOPFPath)
 
-        // Step 4: Parse all manifest items from the OPF file
-        // These represent all resources (HTML files, images, etc.) in the EPUB
+        // Step 4: Parse metadata from the OPF file
+        var metadata = try parseMetadata(opfURL: contentOPFPath)
+
+        // Step 5: Parse all manifest items from the OPF file
         let manifestItems = try parseManifestItems(opfURL: contentOPFPath)
 
-        // Step 5: Parse the table of contents to get chapter information
+        // Step 5.5: Find cover image and update metadata
+        let coverImageURL = findCoverImage(in: manifestItems, baseURL: contentOPFPath.deletingLastPathComponent())
+        if let coverURL = coverImageURL {
+            metadata = EPUBMetadata(
+                title: metadata.title,
+                creators: metadata.creators,
+                contributors: metadata.contributors,
+                language: metadata.language,
+                identifier: metadata.identifier,
+                publisher: metadata.publisher,
+                date: metadata.date,
+                description: metadata.description,
+                subjects: metadata.subjects,
+                rights: metadata.rights,
+                type: metadata.type,
+                source: metadata.source,
+                coverage: metadata.coverage,
+                coverImageURL: coverURL
+            )
+        }
+
+        // Step 6: Parse spine (reading order)
+        let spineItems = try parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
+
+        // Step 7: Parse table of contents
+        tocURL = try findTocNCX(opfURL: contentOPFPath)
         guard let tocPath = tocURL else {
             throw EPUBParserError.tocNCXNotFound
         }
+        let tableOfContents = try parseTableOfContents(at: tocPath)
 
-        // Get basic chapter information from the NCX file
-        let basicChapters = try parseChapters(at: tocPath)
+        // Step 8: Create and cache the EPUBDocument
+        let document = EPUBDocument(
+            metadata: metadata,
+            manifest: manifestItems,
+            spine: spineItems,
+            tableOfContents: tableOfContents,
+            baseURL: opfRootURL ?? unzipDestination
+        )
 
-        // Step 6: Enhance basic chapters with their associated manifest items
-        // This creates a hierarchical structure connecting chapters to their content
-        var chapters: [EPUBChapter] = []
-
-        // Filter manifest items to only HTML/XHTML files for chapter content
-        let htmlManifestItems = manifestItems.filter { item in
-            ["application/xhtml+xml", "text/html"].contains(item.mediaType) || item.path.hasSuffix(".html") || item.path.hasSuffix(".xhtml") || item.path.hasSuffix(".htm")
-        }
-
-        for (index, chapter) in basicChapters.enumerated() {
-            var chapter = chapter
-
-            // Get the chapter's primary file path (may include fragment identifier)
-            let chapterPath = chapter.path
-            let chapterPathWithoutFragment = chapterPath.components(separatedBy: "#").first ?? chapterPath
-
-            // Method 1: Direct path matching
-            // Find manifest items that match this chapter's path exactly
-            let exactMatchItems = htmlManifestItems.filter { item in
-                normalizePathForComparison(item.path) == normalizePathForComparison(chapterPathWithoutFragment)
-            }
-
-            if !exactMatchItems.isEmpty {
-                // Check if this might be a multi-file EPUB where chapters span multiple files
-                // Heuristic: If we have many more HTML files than chapters, try range mapping
-                let isLikelyMultiFileStructure = htmlManifestItems.count > basicChapters.count * 3
-
-                if isLikelyMultiFileStructure && exactMatchItems.count == 1 {
-                    // Try to expand this chapter to include subsequent files until the next chapter
-                    let normalizedChapterPath = normalizePathForComparison(chapterPathWithoutFragment)
-
-                    if let startIndex = htmlManifestItems.firstIndex(where: { item in
-                        normalizePathForComparison(item.path) == normalizedChapterPath
-                    }) {
-                        let nextChapter = basicChapters.element(at: index + 1)
-                        let endIndex: Int
-
-                        if let nextChapter = nextChapter {
-                            let nextChapterPathWithoutFragment = nextChapter.path.components(separatedBy: "#").first ?? nextChapter.path
-                            let normalizedNextPath = normalizePathForComparison(nextChapterPathWithoutFragment)
-
-                            if let nextStartIndex = htmlManifestItems.firstIndex(where: { item in
-                                normalizePathForComparison(item.path) == normalizedNextPath
-                            }) {
-                                endIndex = nextStartIndex
-                            } else {
-                                endIndex = startIndex + 1  // Conservative fallback
-                            }
-                        } else {
-                            // Last chapter - include remaining files, but be conservative
-                            endIndex = min(startIndex + 10, htmlManifestItems.count)  // Limit to 10 files max
-                        }
-
-                        if endIndex > startIndex + 1 {
-                            // We found additional content, use range mapping
-                            let rangeItems = Array(htmlManifestItems[startIndex..<endIndex])
-                            chapter.manifestItems = rangeItems
-                            print("📚 Chapter '\(chapter.title)': Extended range (\(startIndex)..<\(endIndex)) - \(rangeItems.count) items")
-                        } else {
-                            // Use exact match
-                            chapter.manifestItems = exactMatchItems
-                            print("📄 Chapter '\(chapter.title)': Found exact match - \(exactMatchItems.count) items")
-                        }
-                    } else {
-                        chapter.manifestItems = exactMatchItems
-                        print("📄 Chapter '\(chapter.title)': Found exact match - \(exactMatchItems.count) items")
-                    }
-                } else {
-                    chapter.manifestItems = exactMatchItems
-                    print("📄 Chapter '\(chapter.title)': Found exact match - \(exactMatchItems.count) items")
-                }
-            } else {
-                // Method 2: Sequential range mapping for chapters that span multiple files
-                // This handles cases where chapters span across multiple HTML files in sequence
-
-                let normalizedChapterPath = normalizePathForComparison(chapterPathWithoutFragment)
-
-                // Find the starting position for this chapter
-                if let startIndex = htmlManifestItems.firstIndex(where: { item in
-                    normalizePathForComparison(item.path) == normalizedChapterPath
-                }) {
-
-                    // Determine the ending position by looking at the next chapter's start
-                    let nextChapter = basicChapters.element(at: index + 1)
-                    let endIndex: Int
-
-                    if let nextChapter = nextChapter {
-                        let nextChapterPathWithoutFragment = nextChapter.path.components(separatedBy: "#").first ?? nextChapter.path
-                        let normalizedNextPath = normalizePathForComparison(nextChapterPathWithoutFragment)
-
-                        // Find where the next chapter starts
-                        if let nextStartIndex = htmlManifestItems.firstIndex(where: { item in
-                            normalizePathForComparison(item.path) == normalizedNextPath
-                        }) {
-                            endIndex = nextStartIndex
-                        } else {
-                            // Next chapter not found in sequence, assume this chapter has only its primary file
-                            endIndex = startIndex + 1
-                        }
-                    } else {
-                        // This is the last chapter, include all remaining HTML files
-                        endIndex = htmlManifestItems.count
-                    }
-
-                    // Add all HTML files from start to end (exclusive)
-                    let rangeItems = Array(htmlManifestItems[startIndex..<endIndex])
-                    chapter.manifestItems = rangeItems
-
-                    print("📚 Chapter '\(chapter.title)': Range mapping (\(startIndex)..<\(endIndex)) - \(rangeItems.count) items")
-                    if rangeItems.count > 1 {
-                        print("    Multi-file chapter detected:")
-                        for (i, item) in rangeItems.enumerated() {
-                            print("      [\(i+1)] \(item.path)")
-                        }
-                    }
-
-                } else {
-                    // Method 3: Fragment-based mapping for chapters within same file
-                    // This handles cases where multiple chapters exist in the same HTML file
-                    if chapterPath.contains("#") {
-                        // This chapter references a specific section in an HTML file
-                        let baseFile = chapterPathWithoutFragment
-                        let normalizedBasePath = normalizePathForComparison(baseFile)
-
-                        if let matchingItem = htmlManifestItems.first(where: { item in
-                            normalizePathForComparison(item.path) == normalizedBasePath
-                        }) {
-                            chapter.manifestItems = [matchingItem]
-                            print("🔗 Chapter '\(chapter.title)': Fragment-based mapping - \(chapterPath)")
-                        } else {
-                            print("❌ Chapter '\(chapter.title)': Fragment base file not found - \(baseFile)")
-                            continue
-                        }
-                    } else {
-                        // Method 4: Fallback - try partial path matching
-                        let partialMatchItems = htmlManifestItems.filter { item in
-                            let itemBaseName = URL(fileURLWithPath: item.path).deletingPathExtension().lastPathComponent.lowercased()
-                            let chapterBaseName = URL(fileURLWithPath: chapterPathWithoutFragment).deletingPathExtension().lastPathComponent.lowercased()
-                            return itemBaseName.contains(chapterBaseName) || chapterBaseName.contains(itemBaseName)
-                        }
-
-                        if !partialMatchItems.isEmpty {
-                            chapter.manifestItems = partialMatchItems
-                            print("🔍 Chapter '\(chapter.title)': Partial match - \(partialMatchItems.count) items")
-                        } else {
-                            print("❌ Chapter '\(chapter.title)': No manifest items found")
-                            print("   Chapter path: '\(chapterPath)'")
-                            print("   Available HTML files: \(htmlManifestItems.prefix(3).map { $0.path })")
-                            continue
-                        }
-                    }
-                }
-            }  // Skip chapters with no associated content
-            guard !chapter.manifestItems.isEmpty else {
-                continue
-            }
-
-            chapters.append(chapter)
-        }
-
-        // Store the processed chapters in the cache
-        cachedChapters = chapters
+        cachedDocument = document
+        return document
     }
 
     /// Get the base URL for resolving relative paths in this EPUB
     /// - Returns: The OPF root URL if available, or the unzip destination
     public func baseURL() -> URL {
         return opfRootURL ?? unzipDestination
-    }
-
-    /// Get the chapter by ID
-    /// - Parameter id: The chapter id
-    /// - Returns: EPUBChapter object
-    public func chapter(id: String) throws -> EPUBChapter {
-        guard let chapter = cachedChapters.first(where: { $0.id == id }) else {
-            throw EPUBParserError.chapterNotFound(id: id)
-        }
-
-        return chapter
     }
 
     /// Clean up unzipped content to free disk space
@@ -364,7 +223,7 @@ public actor EPUBParser {
         return URL(string: ncxPath, relativeTo: rootURL) ?? rootURL.appendingPathComponent(ncxPath)
     }
 
-    private func parseChapters(at tocURL: URL) throws -> [EPUBChapter] {
+    private func parseTableOfContents(at tocURL: URL) throws -> [EPUBTOCItem] {
         // Determine if this is an NCX file or EPUB3 navigation document
         if tocURL.pathExtension.lowercased() == "ncx" {
             // Use NCX parser for EPUB2
@@ -382,17 +241,37 @@ public actor EPUBParser {
         return try manifestParser.parseManifest(at: opfURL)
     }
 
-    /// Normalizes paths for comparison by removing fragments and standardizing separators
-    private func normalizePathForComparison(_ path: String) -> String {
-        // Remove URL fragments (everything after #)
-        let pathWithoutFragment = path.components(separatedBy: "#").first ?? path
+    private func parseSpine(opfURL: URL, manifestItems: [EPUBManifestItem]) throws -> [EPUBSpineItem] {
+        let spineParser = SpineParser(manifestItems: manifestItems)
+        return try spineParser.parseSpine(at: opfURL)
+    }
 
-        // Remove leading slashes and normalize separators
-        return
-            pathWithoutFragment
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            .replacingOccurrences(of: "\\", with: "/")
-            .lowercased()
+    private func parseMetadata(opfURL: URL) throws -> EPUBMetadata {
+        let metadataParser = MetadataParser()
+        return try metadataParser.parseMetadata(at: opfURL)
+    }
+
+    private func findCoverImage(in manifestItems: [EPUBManifestItem], baseURL: URL) -> URL? {
+        // Strategy 1: Look for item with id="cover-image" or id="cover"
+        if let coverItem = manifestItems.first(where: {
+            $0.id.lowercased() == "cover-image" || $0.id.lowercased() == "cover" || $0.id.lowercased().contains("cover") && $0.mediaType.hasPrefix("image/")
+        }) {
+            return URL(string: coverItem.path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(coverItem.path)
+        }
+
+        // Strategy 2: Look for properties="cover-image"
+        if let coverItem = manifestItems.first(where: {
+            $0.properties["properties"]?.contains("cover-image") == true
+        }) {
+            return URL(string: coverItem.path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(coverItem.path)
+        }
+
+        // Strategy 3: Look for first image in manifest
+        if let firstImage = manifestItems.first(where: { $0.mediaType.hasPrefix("image/") }) {
+            return URL(string: firstImage.path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(firstImage.path)
+        }
+
+        return nil
     }
 }
 
