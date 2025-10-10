@@ -13,6 +13,7 @@ public enum EPUBParserError: LocalizedError {
     case opfParseError
     case missingContainerXML
     case invalidEPUBStructure(String)
+    case invalidUnzippedPath(String)
 
     public var errorDescription: String? {
         switch self {
@@ -38,6 +39,8 @@ public enum EPUBParserError: LocalizedError {
             return "Missing or unreadable container.xml file"
         case .invalidEPUBStructure(let description):
             return "Invalid EPUB structure: \(description)"
+        case .invalidUnzippedPath(let reason):
+            return "Invalid unzipped EPUB path: \(reason)"
         }
     }
 }

@@ -8,7 +8,8 @@
 
 - ✅ **Document-Centric Design**: Direct access to EPUB components (metadata, spine, TOC, manifest)
 - 📚 **EPUB 2 & 3 Support**: Handles both NCX (EPUB 2) and Navigation Document (EPUB 3) formats
-- 🔄 **Actor-Based Concurrency**: Thread-safe parsing with Swift's modern concurrency model
+- � **Flexible Initialization**: Parse from `.epub` files or pre-unzipped directories
+- �🔄 **Actor-Based Concurrency**: Thread-safe parsing with Swift's modern concurrency model
 - 🌲 **Hierarchical TOC**: Preserves nested table of contents structure
 - 📖 **Reading Order**: Access spine items with linear/non-linear distinction
 - 🎯 **Fragment Support**: Proper handling of URL fragments in TOC items
@@ -35,6 +36,8 @@ Or add it directly in Xcode:
 
 ## Quick Start
 
+### From EPUB File
+
 ```swift
 import EPUBParser
 
@@ -43,10 +46,49 @@ let epubURL = URL(fileURLWithPath: "/path/to/book.epub")
 let parser = EPUBParser(
     epubPath: epubURL,
     identifier: "my-reader",
-    cacheDirectory: FileManager.default.temporaryDirectory
+    cacheDirectory: FileManager.default.temporaryDirectory,
+    cleanup: false  // Set to true to auto-cleanup in deinit
 )
 
+// Process the EPUB
+let document = try await parser.processEPUB()
+
 // Access metadata
+print("Title: \(document.metadata.title)")
+print("Author: \(document.metadata.primaryCreator ?? "Unknown")")
+print("Language: \(document.metadata.language ?? "Unknown")")
+
+// Manual cleanup (optional if cleanup: true was set)
+parser.cleanup()
+```
+
+### From Pre-Unzipped Directory
+
+If you already have an unzipped EPUB directory, you can initialize the parser directly:
+
+```swift
+import EPUBParser
+
+// Initialize with pre-unzipped directory
+let unzippedEPUBPath = URL(fileURLWithPath: "/path/to/unzipped/epub")
+
+// This will validate that the directory contains required EPUB files
+let parser = try EPUBParser(
+    unzippedPath: unzippedEPUBPath,
+    cleanup: false  // Set to true if you want to delete the directory on deinit
+)
+
+// Process the EPUB (no unzipping needed!)
+let document = try await parser.processEPUB()
+
+// By default, pre-unzipped directories are not deleted on cleanup
+// unless you set cleanup: true in the initializer
+parser.cleanup()
+```
+
+### Working with EPUB Content
+
+```swift
 print("Title: \(document.metadata.title)")
 print("Author: \(document.metadata.primaryCreator ?? "Unknown")")
 print("Language: \(document.metadata.language ?? "Unknown")")

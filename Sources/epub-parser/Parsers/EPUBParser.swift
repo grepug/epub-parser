@@ -6,9 +6,10 @@ public actor EPUBParser {
     // MARK: - Constants & Properties
 
     private let fileManager = FileManager.default
-    private let sourceEPUBPath: URL
+    private let sourceEPUBPath: URL?
     private let unzipDestination: URL
-    private let identifier: String
+    private let isPreUnzipped: Bool
+    private let shouldCleanup: Bool
 
     private var opfRootURL: URL? = nil
     private var tocURL: URL? = nil
@@ -20,11 +21,13 @@ public actor EPUBParser {
     /// Initialize with the path to an EPUB file
     /// - Parameters:
     ///   - epubPath: Path to the EPUB file
-    ///   - identifier: Unique identifier for this EPUB processing operation
+    ///   - identifier: Unique identifier for this EPUB processing operation (used to create unique unzip directory)
     ///   - cacheDirectory: Optional custom directory for unzipping, defaults to documents directory
-    public init(epubPath: URL, identifier: String = UUID().uuidString, cacheDirectory: URL? = nil) {
+    ///   - cleanup: Whether to automatically cleanup unzipped files in deinit (defaults to false)
+    public init(epubPath: URL, identifier: String, cacheDirectory: URL? = nil, cleanup: Bool = false) {
         self.sourceEPUBPath = epubPath
-        self.identifier = identifier
+        self.isPreUnzipped = false
+        self.shouldCleanup = cleanup
 
         // Determine unzip destination
         if let customDir = cacheDirectory {
@@ -35,8 +38,25 @@ public actor EPUBParser {
         }
     }
 
+    /// Initialize with a pre-unzipped EPUB directory
+    /// - Parameters:
+    ///   - unzippedPath: Path to the unzipped EPUB directory
+    ///   - cleanup: Whether to automatically cleanup the directory in deinit (defaults to false)
+    /// - Throws: `EPUBParserError.invalidUnzippedPath` if the path is invalid or doesn't contain required EPUB files
+    public init(unzippedPath: URL, cleanup: Bool = false) throws {
+        self.sourceEPUBPath = nil
+        self.isPreUnzipped = true
+        self.unzipDestination = unzippedPath
+        self.shouldCleanup = cleanup
+
+        // Validate the unzipped path
+        try validateUnzippedPath(unzippedPath)
+    }
+
     deinit {
-        cleanup()
+        if shouldCleanup {
+            cleanup()
+        }
     }
 
     // MARK: - Accessors
@@ -130,13 +150,51 @@ public actor EPUBParser {
     }
 
     /// Clean up unzipped content to free disk space
+    /// Note: This will not delete pre-unzipped directories provided via `init(unzippedPath:)` unless cleanup parameter was set to true
+    /// Can be called manually regardless of the cleanup parameter setting
     nonisolated public func cleanup() {
+        // Don't delete pre-unzipped directories that the user provided (unless they explicitly requested cleanup)
+        guard !isPreUnzipped || shouldCleanup else { return }
         try? FileManager.default.removeItem(at: unzipDestination)
     }
 
     // MARK: - Private Methods
 
+    /// Validate that the unzipped path contains required EPUB files
+    nonisolated private func validateUnzippedPath(_ path: URL) throws {
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+
+        // Check if path exists and is a directory
+        guard fileManager.fileExists(atPath: path.path, isDirectory: &isDirectory) else {
+            throw EPUBParserError.invalidUnzippedPath("Path does not exist: \(path.path)")
+        }
+
+        guard isDirectory.boolValue else {
+            throw EPUBParserError.invalidUnzippedPath("Path is not a directory: \(path.path)")
+        }
+
+        // Check for essential EPUB structure
+        let directoryResolver = EPUBDirectoryResolver()
+        let structureResult = directoryResolver.resolveEPUBStructure(from: path)
+
+        // Verify container.xml exists
+        guard fileManager.fileExists(atPath: structureResult.containerXMLURL.path) else {
+            throw EPUBParserError.invalidUnzippedPath("Missing META-INF/container.xml")
+        }
+    }
+
     private func unzipIfNeeded() throws {
+        // If already using a pre-unzipped directory, skip unzipping
+        if isPreUnzipped {
+            return
+        }
+
+        // Ensure we have a source EPUB path
+        guard let sourceEPUB = sourceEPUBPath else {
+            throw EPUBParserError.invalidUnzippedPath("No source EPUB file specified")
+        }
+
         // Check if already unzipped
         if fileManager.fileExists(atPath: unzipDestination.path) {
             return
@@ -149,7 +207,7 @@ public actor EPUBParser {
 
         do {
             // Try system unarchiver first (more tolerant of minor issues)
-            try fileManager.unzipItem(at: sourceEPUBPath, to: unzipDestination)
+            try fileManager.unzipItem(at: sourceEPUB, to: unzipDestination)
         } catch {
             print("⚠️ System unarchiver failed: \(String(describing: error))")
             print("🔧 Attempting fallback to ZIPFoundation...")
@@ -159,13 +217,13 @@ public actor EPUBParser {
             try fileManager.createDirectory(at: unzipDestination, withIntermediateDirectories: true)
 
             // Fallback to ZIPFoundation
-            try unzipWithZIPFoundation()
+            try unzipWithZIPFoundation(sourceEPUB: sourceEPUB)
         }
     }
 
-    private func unzipWithZIPFoundation() throws {
+    private func unzipWithZIPFoundation(sourceEPUB: URL) throws {
         do {
-            let archive = try Archive(url: sourceEPUBPath, accessMode: .read)
+            let archive = try Archive(url: sourceEPUB, accessMode: .read)
 
             // Extract all entries with error tolerance
             var extractedCount = 0
@@ -252,26 +310,67 @@ public actor EPUBParser {
     }
 
     private func findCoverImage(in manifestItems: [EPUBManifestItem], baseURL: URL) -> URL? {
-        // Strategy 1: Look for item with id="cover-image" or id="cover"
-        if let coverItem = manifestItems.first(where: {
-            $0.id.lowercased() == "cover-image" || $0.id.lowercased() == "cover" || $0.id.lowercased().contains("cover") && $0.mediaType.hasPrefix("image/")
-        }) {
-            return URL(string: coverItem.path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(coverItem.path)
+        var candidateCoverItem: EPUBManifestItem? = nil
+
+        // Strategy 1: Look for item with id="cover-image" (must be an image)
+        candidateCoverItem = manifestItems.first(where: {
+            ($0.id.lowercased() == "cover-image" || $0.id.lowercased() == "cover") && $0.mediaType.hasPrefix("image/")
+        })
+
+        // Strategy 2: Look for properties="cover-image" (must be an image)
+        if candidateCoverItem == nil {
+            candidateCoverItem = manifestItems.first(where: {
+                $0.properties["properties"]?.contains("cover-image") == true && $0.mediaType.hasPrefix("image/")
+            })
         }
 
-        // Strategy 2: Look for properties="cover-image"
-        if let coverItem = manifestItems.first(where: {
-            $0.properties["properties"]?.contains("cover-image") == true
-        }) {
-            return URL(string: coverItem.path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(coverItem.path)
+        // Strategy 3: Look for any item with "cover" in id that's an image
+        if candidateCoverItem == nil {
+            candidateCoverItem = manifestItems.first(where: {
+                $0.id.lowercased().contains("cover") && $0.mediaType.hasPrefix("image/")
+            })
         }
 
-        // Strategy 3: Look for first image in manifest
-        if let firstImage = manifestItems.first(where: { $0.mediaType.hasPrefix("image/") }) {
-            return URL(string: firstImage.path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(firstImage.path)
+        // Strategy 4: Look for first image in manifest
+        if candidateCoverItem == nil {
+            candidateCoverItem = manifestItems.first(where: {
+                $0.mediaType.hasPrefix("image/")
+            })
         }
 
-        return nil
+        // Validate and construct URL
+        guard let coverItem = candidateCoverItem else { return nil }
+
+        // Ensure path is not empty and contains actual content
+        let trimmedPath = coverItem.path.trimmingCharacters(in: .whitespaces)
+        guard !trimmedPath.isEmpty else {
+            print("⚠️ Cover image found but path is empty: id=\(coverItem.id)")
+            return nil
+        }
+
+        // Construct the full URL by appending the path to baseURL
+        // Always use appendingPathComponent to ensure proper path construction
+        let coverURL = baseURL.appendingPathComponent(trimmedPath)
+
+        // Validate that we have a valid file URL
+        guard coverURL.isFileURL else {
+            print("⚠️ Cover URL is not a file URL: \(coverURL)")
+            return nil
+        }
+
+        // Validate that the URL actually points to a file, not just a directory
+        guard !coverURL.hasDirectoryPath else {
+            print("⚠️ Cover image URL is a directory, not a file: \(coverURL.path)")
+            return nil
+        }
+
+        // Verify file exists
+        let fileExists = FileManager.default.fileExists(atPath: coverURL.path)
+        print("📸 Cover image URL created: \(coverURL.absoluteString)")
+        print("   Path: \(coverURL.path)")
+        print("   Exists: \(fileExists)")
+
+        return coverURL
     }
 }
 
