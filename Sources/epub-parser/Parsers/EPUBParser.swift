@@ -123,18 +123,31 @@ public actor EPUBParser {
         // Step 6: Parse spine (reading order)
         let spineItems = try parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
 
+        // Step 6.5: Normalize HTML extensions for files without them
+        let (updatedManifestItems, updatedSpineItems, pathMappings) = try normalizeHTMLExtensions(
+            manifestItems: manifestItems,
+            spineItems: spineItems,
+            baseURL: opfRootURL ?? unzipDestination
+        )
+
         // Step 7: Parse table of contents
         tocURL = try findTocNCX(opfURL: contentOPFPath)
         guard let tocPath = tocURL else {
             throw EPUBParserError.tocNCXNotFound
         }
-        let tableOfContents = try parseTableOfContents(at: tocPath)
+        var tableOfContents = try parseTableOfContents(at: tocPath)
+
+        // Step 7.5: Apply HTML extension normalization to TOC items
+        tableOfContents = applyHTMLExtensionNormalizationToTOC(
+            tableOfContents: tableOfContents,
+            pathMappings: pathMappings
+        )
 
         // Step 8: Create and cache the EPUBDocument
         let document = EPUBDocument(
             metadata: metadata,
-            manifest: manifestItems,
-            spineItems: spineItems,
+            manifest: updatedManifestItems,
+            spineItems: updatedSpineItems,
             tableOfContents: tableOfContents,
             baseURL: opfRootURL ?? unzipDestination
         )
@@ -159,6 +172,128 @@ public actor EPUBParser {
     }
 
     // MARK: - Private Methods
+
+    /// Normalize HTML extensions for files that don't have them
+    private func normalizeHTMLExtensions(
+        manifestItems: [EPUBManifestItem],
+        spineItems: [EPUBSpineItem],
+        baseURL: URL
+    ) throws -> ([EPUBManifestItem], [EPUBSpineItem], [String: String]) {
+
+        var pathMappings: [String: String] = [:]
+
+        // Iterate through spine items and check if HTML files need .html extension
+        for spineItem in spineItems {
+            let manifestItem = spineItem.manifestItem
+
+            // Check if this is an HTML file
+            let isHTMLFile =
+                ["application/xhtml+xml", "text/html"].contains(manifestItem.mediaType) || manifestItem.path.hasSuffix(".html") || manifestItem.path.hasSuffix(".xhtml")
+                || manifestItem.path.hasSuffix(".htm")
+
+            if isHTMLFile {
+                // Get the full file URL
+                let fileURL = baseURL.appendingPathComponent(manifestItem.path)
+
+                // Check if file exists and doesn't have a proper extension
+                let pathExtension = fileURL.pathExtension.lowercased()
+                let hasProperExtension = ["html", "xhtml", "htm"].contains(pathExtension)
+
+                if !hasProperExtension && fileManager.fileExists(atPath: fileURL.path) {
+                    // Rename the file to add .html extension
+                    let newFileURL = fileURL.appendingPathExtension("html")
+
+                    // Skip if target already exists
+                    if !fileManager.fileExists(atPath: newFileURL.path) {
+                        try fileManager.moveItem(at: fileURL, to: newFileURL)
+
+                        // Store the path mapping
+                        let newPath = manifestItem.path + ".html"
+                        pathMappings[manifestItem.path] = newPath
+
+                        print("✏️ Renamed HTML file: \(manifestItem.path) → \(newPath)")
+                    }
+                }
+            }
+        }
+
+        // Update manifest items with new paths
+        let updatedManifestItems = manifestItems.map { item in
+            if let newPath = pathMappings[item.path] {
+                return EPUBManifestItem(
+                    id: item.id,
+                    path: newPath,
+                    mediaType: item.mediaType,
+                    properties: item.properties
+                )
+            }
+            return item
+        }
+
+        // Update spine items with updated manifest items
+        let updatedSpineItems = spineItems.map { spineItem in
+            let manifestItem = spineItem.manifestItem
+            if let newPath = pathMappings[manifestItem.path] {
+                let updatedManifestItem = EPUBManifestItem(
+                    id: manifestItem.id,
+                    path: newPath,
+                    mediaType: manifestItem.mediaType,
+                    properties: manifestItem.properties
+                )
+                return EPUBSpineItem(
+                    id: spineItem.id,
+                    idref: spineItem.idref,
+                    linear: spineItem.linear,
+                    manifestItem: updatedManifestItem
+                )
+            }
+            return spineItem
+        }
+
+        return (updatedManifestItems, updatedSpineItems, pathMappings)
+    }
+
+    /// Apply HTML extension normalization to TOC items
+    private func applyHTMLExtensionNormalizationToTOC(
+        tableOfContents: [EPUBTOCItem],
+        pathMappings: [String: String]
+    ) -> [EPUBTOCItem] {
+        return tableOfContents.map { tocItem in
+            var updatedHref = tocItem.href
+
+            // Handle hrefs that may contain fragments (e.g., "chapter1#section2")
+            if let hashIndex = tocItem.href.firstIndex(of: "#") {
+                let pathPart = String(tocItem.href[..<hashIndex])
+                let fragmentPart = String(tocItem.href[tocItem.href.index(after: hashIndex)...])
+
+                // Check if the path part was remapped
+                if let newPath = pathMappings[pathPart] {
+                    updatedHref = newPath + "#" + fragmentPart
+                    print("✏️ Updated TOC href with fragment: \(tocItem.href) → \(updatedHref)")
+                }
+            } else {
+                // No fragment, check direct mapping
+                if let newPath = pathMappings[tocItem.href] {
+                    updatedHref = newPath
+                    print("✏️ Updated TOC href: \(tocItem.href) → \(updatedHref)")
+                }
+            }
+
+            // Recursively update children
+            let updatedChildren = applyHTMLExtensionNormalizationToTOC(
+                tableOfContents: tocItem.children,
+                pathMappings: pathMappings
+            )
+
+            return EPUBTOCItem(
+                id: tocItem.id,
+                title: tocItem.title,
+                playOrder: tocItem.playOrder,
+                href: updatedHref,
+                children: updatedChildren
+            )
+        }
+    }
 
     /// Validate that the unzipped path contains required EPUB files
     nonisolated private func validateUnzippedPath(_ path: URL) throws {
