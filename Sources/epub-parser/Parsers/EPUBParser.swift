@@ -287,7 +287,7 @@ public actor EPUBParser {
 
             // Recursively update children
             let updatedChildren = applyHTMLExtensionNormalizationToTOC(
-                tableOfContents: tocItem.children,
+                tableOfContents: tocItem.children ?? [],
                 pathMappings: pathMappings
             )
 

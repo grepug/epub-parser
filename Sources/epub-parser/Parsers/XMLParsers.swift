@@ -239,7 +239,7 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
 
             // Pop all children at deeper levels and add them to this item
             while let last = navPointStack.last, last.depth > currentDepth {
-                tocItem.children.insert(navPointStack.removeLast().item, at: 0)
+                tocItem.children?.insert(navPointStack.removeLast().item, at: 0)
             }
 
             if currentDepth == 1 {
@@ -371,7 +371,7 @@ internal class EPUB3NavParser: NSObject, XMLParserDelegate {
 
             // Pop all children at deeper levels and add them to this item
             while let last = navItemStack.last, last.depth > currentDepth {
-                tocItem.children.insert(navItemStack.removeLast().item, at: 0)
+                tocItem.children?.insert(navItemStack.removeLast().item, at: 0)
             }
 
             navItemStack.append((tocItem, currentDepth))

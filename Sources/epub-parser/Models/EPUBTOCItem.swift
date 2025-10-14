@@ -26,7 +26,7 @@ public struct EPUBTOCItem: Identifiable, Hashable, Sendable {
     }
 
     /// Child TOC items for hierarchical structure (e.g., subsections)
-    public var children: [EPUBTOCItem]
+    public var children: [EPUBTOCItem]?
 
     /// Initialize a TOC item
     public init(id: String, title: String, playOrder: Int, href: String, children: [EPUBTOCItem] = []) {
@@ -50,7 +50,7 @@ extension EPUBTOCItem {
     /// Flatten the hierarchical TOC structure into a linear array
     public func flattened() -> [EPUBTOCItem] {
         var result = [self]
-        for child in children {
+        for child in children ?? [] {
             result.append(contentsOf: child.flattened())
         }
         return result

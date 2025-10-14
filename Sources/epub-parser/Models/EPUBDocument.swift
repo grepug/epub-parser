@@ -83,4 +83,65 @@ extension EPUBDocument {
     public var linearSpineItems: [EPUBSpineItem] {
         spineItems.filter { $0.linear }
     }
+
+    /// Find the spine item ID for a given URL/href
+    /// This method handles both relative and absolute URLs, with or without fragments
+    /// Returns nil if no matching spine item is found
+    public func spineItemId(for href: String) -> String? {
+        // Handle empty or invalid hrefs
+        guard !href.isEmpty else { return nil }
+
+        // Remove fragment part if present (e.g., "chapter1.html#section2" -> "chapter1.html")
+        let pathWithoutFragment: String
+        if let hashIndex = href.firstIndex(of: "#") {
+            pathWithoutFragment = String(href[..<hashIndex])
+        } else {
+            pathWithoutFragment = href
+        }
+
+        // Handle absolute URLs by extracting the path component
+        let targetPath: String
+        if let url = URL(string: pathWithoutFragment), url.scheme != nil {
+            // This is an absolute URL, extract the path relative to baseURL
+            if pathWithoutFragment.hasPrefix(baseURL.absoluteString) {
+                targetPath = String(pathWithoutFragment.dropFirst(baseURL.absoluteString.count))
+            } else {
+                // Different base URL, try to extract just the filename
+                targetPath = url.lastPathComponent
+            }
+        } else {
+            // This is a relative path
+            targetPath = pathWithoutFragment
+        }
+
+        // Normalize the path by removing leading slashes and resolving relative components
+        let normalizedPath = targetPath.hasPrefix("/") ? String(targetPath.dropFirst()) : targetPath
+
+        // Find matching spine item by comparing paths
+        for spineItem in spineItems {
+            let manifestPath = spineItem.manifestItem.path
+
+            // Direct path match
+            if manifestPath == normalizedPath {
+                return spineItem.id
+            }
+
+            // Match by filename if full path doesn't match
+            let manifestFileName = URL(fileURLWithPath: manifestPath).lastPathComponent
+            let targetFileName = URL(fileURLWithPath: normalizedPath).lastPathComponent
+
+            if manifestFileName == targetFileName {
+                return spineItem.id
+            }
+        }
+
+        return nil
+    }
+
+    /// Find the spine item ID for a given URL
+    /// This method handles both relative and absolute URLs, with or without fragments
+    /// Returns nil if no matching spine item is found
+    public func spineItemId(for url: URL) -> String? {
+        return spineItemId(for: url.absoluteString)
+    }
 }
