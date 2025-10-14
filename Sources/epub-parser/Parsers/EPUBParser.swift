@@ -10,6 +10,7 @@ public actor EPUBParser {
     private let unzipDestination: URL
     private let isPreUnzipped: Bool
     private let shouldCleanup: Bool
+    private let skipUnzipIfDirectoryExists: Bool
 
     private var opfRootURL: URL? = nil
     private var tocURL: URL? = nil
@@ -24,10 +25,17 @@ public actor EPUBParser {
     ///   - identifier: Unique identifier for this EPUB processing operation (used to create unique unzip directory)
     ///   - cacheDirectory: Optional custom directory for unzipping, defaults to documents directory
     ///   - cleanup: Whether to automatically cleanup unzipped files in deinit (defaults to false)
-    public init(epubPath: URL, identifier: String, cacheDirectory: URL? = nil, cleanup: Bool = false) {
+    public init(
+        epubPath: URL,
+        identifier: String,
+        cacheDirectory: URL? = nil,
+        skipUnzipIfDirectoryExists: Bool = true,
+        cleanup: Bool = false
+    ) {
         self.sourceEPUBPath = epubPath
         self.isPreUnzipped = false
         self.shouldCleanup = cleanup
+        self.skipUnzipIfDirectoryExists = skipUnzipIfDirectoryExists
 
         // Determine unzip destination
         if let customDir = cacheDirectory {
@@ -48,6 +56,7 @@ public actor EPUBParser {
         self.isPreUnzipped = true
         self.unzipDestination = unzippedPath
         self.shouldCleanup = cleanup
+        self.skipUnzipIfDirectoryExists = true  // Always true for pre-unzipped directories
 
         // Validate the unzipped path
         try validateUnzippedPath(unzippedPath)
@@ -494,9 +503,14 @@ public actor EPUBParser {
             throw EPUBParserError.invalidUnzippedPath("No source EPUB file specified")
         }
 
-        // Check if already unzipped
-        if fileManager.fileExists(atPath: unzipDestination.path) {
+        // Check if already unzipped (only skip if skipUnzipIfDirectoryExists is true)
+        if skipUnzipIfDirectoryExists && fileManager.fileExists(atPath: unzipDestination.path) {
             return
+        }
+
+        // If directory exists but we want to re-extract, remove it first
+        if !skipUnzipIfDirectoryExists && fileManager.fileExists(atPath: unzipDestination.path) {
+            try fileManager.removeItem(at: unzipDestination)
         }
 
         // Create directory if needed
