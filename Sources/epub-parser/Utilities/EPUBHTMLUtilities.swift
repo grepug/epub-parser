@@ -82,3 +82,92 @@ internal func cleanHTMLLineBreaks(_ content: String) throws -> String {
 
     return cleanedContent
 }
+
+/// Normalize HTML content by ensuring charset meta tag and cleaning line breaks
+internal func normalizeHTMLContent(_ content: String) throws -> String {
+    var normalizedContent = content
+
+    // First, clean line breaks
+    normalizedContent = try cleanHTMLLineBreaks(normalizedContent)
+
+    // Check if charset meta tag exists in head section
+    let hasCharsetMeta = checkForCharsetMeta(in: normalizedContent)
+
+    if !hasCharsetMeta {
+        normalizedContent = try addCharsetMeta(to: normalizedContent)
+    }
+
+    return normalizedContent
+}
+
+/// Check if HTML content already contains a charset meta tag in the head section
+private func checkForCharsetMeta(in content: String) -> Bool {
+    // Pattern to find <head> section
+    guard
+        let headRegex = try? NSRegularExpression(
+            pattern: "<head[^>]*>(.*?)</head>",
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        )
+    else {
+        return false
+    }
+
+    let range = NSRange(location: 0, length: content.utf16.count)
+    guard let headMatch = headRegex.firstMatch(in: content, options: [], range: range),
+        let headRange = Range(headMatch.range(at: 1), in: content)
+    else {
+        return false
+    }
+
+    let headContent = String(content[headRange])
+
+    // Check for various charset meta tag patterns
+    let charsetPatterns = [
+        "<meta\\s+charset\\s*=\\s*[\"']?utf-8[\"']?[^>]*>",
+        "<meta\\s+[^>]*charset\\s*=\\s*[\"']?utf-8[\"']?[^>]*>",
+        "<meta\\s+http-equiv\\s*=\\s*[\"']?content-type[\"']?[^>]*charset\\s*=\\s*utf-8[^>]*>",
+    ]
+
+    for pattern in charsetPatterns {
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+            regex.firstMatch(in: headContent, options: [], range: NSRange(location: 0, length: headContent.utf16.count)) != nil
+        {
+            return true
+        }
+    }
+
+    return false
+}
+
+/// Add charset meta tag to HTML content
+private func addCharsetMeta(to content: String) throws -> String {
+    // Pattern to find <head> tag and insert after it
+    guard
+        let headRegex = try? NSRegularExpression(
+            pattern: "(<head[^>]*>)",
+            options: .caseInsensitive
+        )
+    else {
+        throw NSError(domain: "HTMLNormalization", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create head regex"])
+    }
+
+    let range = NSRange(location: 0, length: content.utf16.count)
+
+    if let match = headRegex.firstMatch(in: content, options: [], range: range),
+        let matchRange = Range(match.range, in: content)
+    {
+
+        // Insert charset meta tag right after <head> tag
+        let charsetMeta = "\n    <meta charset=\"utf-8\" />"
+        var modifiedContent = content
+        let insertionPoint = matchRange.upperBound
+        modifiedContent.insert(contentsOf: charsetMeta, at: insertionPoint)
+
+        print("✏️ Added charset meta tag to HTML file")
+        return modifiedContent
+    }
+
+    // If no <head> tag found, return content as-is
+    print("⚠️ No <head> tag found in HTML file - skipping charset meta tag addition")
+    return content
+}

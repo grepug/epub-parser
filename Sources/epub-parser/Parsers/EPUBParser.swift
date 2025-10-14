@@ -143,6 +143,12 @@ public actor EPUBParser {
             pathMappings: pathMappings
         )
 
+        // Step 7.6: Normalize HTML content (add charset meta tags and clean line breaks)
+        try normalizeHTMLContent(
+            spineItems: updatedSpineItems,
+            baseURL: opfRootURL ?? unzipDestination
+        )
+
         // Step 8: Create and cache the EPUBDocument
         let document = EPUBDocument(
             metadata: metadata,
@@ -293,6 +299,164 @@ public actor EPUBParser {
                 children: updatedChildren
             )
         }
+    }
+
+    /// Normalize HTML content by adding charset meta tags and cleaning line breaks
+    private func normalizeHTMLContent(
+        spineItems: [EPUBSpineItem],
+        baseURL: URL
+    ) throws {
+        print("\n📝 Normalizing HTML content...")
+
+        var normalizedCount = 0
+        var charsetAddedCount = 0
+
+        for spineItem in spineItems {
+            let manifestItem = spineItem.manifestItem
+
+            // Check if this is an HTML file
+            let isHTMLFile =
+                ["application/xhtml+xml", "text/html"].contains(manifestItem.mediaType) || manifestItem.path.hasSuffix(".html") || manifestItem.path.hasSuffix(".xhtml")
+                || manifestItem.path.hasSuffix(".htm")
+
+            if isHTMLFile {
+                let fileURL = baseURL.appendingPathComponent(manifestItem.path)
+
+                // Check if file exists
+                guard fileManager.fileExists(atPath: fileURL.path) else {
+                    print("⚠️ HTML file not found: \(manifestItem.path)")
+                    continue
+                }
+
+                do {
+                    // Read the HTML content
+                    let originalContent = try String(contentsOf: fileURL, encoding: .utf8)
+
+                    // Check if it needs charset meta tag before normalization
+                    let needsCharset = !checkForCharsetMeta(in: originalContent)
+
+                    // Normalize the content (add charset if needed and clean line breaks)
+                    let normalizedContent = try normalizeHTMLContent(originalContent)
+
+                    // Write back if content changed
+                    if normalizedContent != originalContent {
+                        try normalizedContent.write(to: fileURL, atomically: true, encoding: String.Encoding.utf8)
+                        normalizedCount += 1
+
+                        if needsCharset {
+                            charsetAddedCount += 1
+                        }
+
+                        print("✏️ Normalized HTML file: \(manifestItem.path)")
+                    }
+
+                } catch {
+                    print("⚠️ Failed to normalize HTML file \(manifestItem.path): \(error)")
+                }
+            }
+        }
+
+        print("📊 HTML normalization complete:")
+        print("  Files processed: \(normalizedCount)")
+        print("  Charset meta tags added: \(charsetAddedCount)")
+    }
+
+    /// Check if HTML content already contains a charset meta tag in the head section
+    private func checkForCharsetMeta(in content: String) -> Bool {
+        // Pattern to find <head> section
+        guard
+            let headRegex = try? NSRegularExpression(
+                pattern: "<head[^>]*>(.*?)</head>",
+                options: [.caseInsensitive, .dotMatchesLineSeparators]
+            )
+        else {
+            return false
+        }
+
+        let range = NSRange(location: 0, length: content.utf16.count)
+        guard let headMatch = headRegex.firstMatch(in: content, options: [], range: range),
+            let headRange = Range(headMatch.range(at: 1), in: content)
+        else {
+            return false
+        }
+
+        let headContent = String(content[headRange])
+
+        // Check for various charset meta tag patterns
+        let charsetPatterns = [
+            "<meta\\s+charset\\s*=\\s*[\"']?utf-8[\"']?[^>]*>",
+            "<meta\\s+[^>]*charset\\s*=\\s*[\"']?utf-8[\"']?[^>]*>",
+            "<meta\\s+http-equiv\\s*=\\s*[\"']?content-type[\"']?[^>]*charset\\s*=\\s*utf-8[^>]*>",
+        ]
+
+        for pattern in charsetPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                regex.firstMatch(in: headContent, options: [], range: NSRange(location: 0, length: headContent.utf16.count)) != nil
+            {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /// Normalize HTML content by adding charset meta tag if needed and cleaning line breaks
+    private func normalizeHTMLContent(_ content: String) throws -> String {
+        var normalizedContent = content
+
+        // Check if charset meta tag needs to be added
+        if !checkForCharsetMeta(in: content) {
+            normalizedContent = try addCharsetMeta(to: normalizedContent)
+        }
+
+        // Clean line breaks
+        normalizedContent = cleanHTMLLineBreaks(normalizedContent)
+
+        return normalizedContent
+    }
+
+    /// Add charset meta tag to HTML content
+    private func addCharsetMeta(to content: String) throws -> String {
+        // Pattern to find <head> tag
+        guard
+            let headRegex = try? NSRegularExpression(
+                pattern: "(<head[^>]*>)",
+                options: .caseInsensitive
+            )
+        else {
+            throw EPUBParserError.invalidEPUBStructure("Failed to parse HTML head tag")
+        }
+
+        let range = NSRange(location: 0, length: content.utf16.count)
+
+        // Replace the first <head> tag with <head> + charset meta tag
+        let result = headRegex.stringByReplacingMatches(
+            in: content,
+            options: [],
+            range: range,
+            withTemplate: "$1\n    <meta charset=\"utf-8\" />"
+        )
+
+        return result
+    }
+
+    /// Clean line breaks from HTML content
+    private func cleanHTMLLineBreaks(_ content: String) -> String {
+        // Remove excessive line breaks (more than 2 consecutive newlines)
+        let cleanedContent = content.replacingOccurrences(
+            of: "\\n\\s*\\n\\s*\\n+",
+            with: "\n\n",
+            options: .regularExpression
+        )
+
+        // Trim leading and trailing whitespace from each line while preserving intentional indentation
+        let lines = cleanedContent.components(separatedBy: .newlines)
+        let processedLines = lines.map { line in
+            // Only trim trailing whitespace, preserve leading whitespace for indentation
+            return line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.subtracting(CharacterSet.newlines))
+        }
+
+        return processedLines.joined(separator: "\n")
     }
 
     /// Validate that the unzipped path contains required EPUB files
