@@ -131,4 +131,10 @@ struct TestConfiguration {
         try FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
         return testDir
     }
+
+    /// Create a test destination URL for a specific test
+    static func testDestinationURL(for testName: String) -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        return tempDir.appendingPathComponent("EPUBParser_\(testName)_\(UUID().uuidString)")
+    }
 }

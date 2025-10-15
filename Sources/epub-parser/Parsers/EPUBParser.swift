@@ -7,7 +7,7 @@ public actor EPUBParser {
 
     private let fileManager = FileManager.default
     private let sourceEPUBPath: URL?
-    private let unzipDestination: URL
+    public let unzipDestination: URL
     private let isPreUnzipped: Bool
     private let shouldCleanup: Bool
     private let skipUnzipIfDirectoryExists: Bool
@@ -22,13 +22,12 @@ public actor EPUBParser {
     /// Initialize with the path to an EPUB file
     /// - Parameters:
     ///   - epubPath: Path to the EPUB file
-    ///   - identifier: Unique identifier for this EPUB processing operation (used to create unique unzip directory)
-    ///   - cacheDirectory: Optional custom directory for unzipping, defaults to documents directory
+    ///   - destinationURL: Custom destination URL for unzipping the EPUB
+    ///   - skipUnzipIfDirectoryExists: Whether to skip unzipping if directory already exists
     ///   - cleanup: Whether to automatically cleanup unzipped files in deinit (defaults to false)
     public init(
         epubPath: URL,
-        identifier: String,
-        cacheDirectory: URL? = nil,
+        destinationURL: URL,
         skipUnzipIfDirectoryExists: Bool = true,
         cleanup: Bool = false
     ) {
@@ -37,13 +36,8 @@ public actor EPUBParser {
         self.shouldCleanup = cleanup
         self.skipUnzipIfDirectoryExists = skipUnzipIfDirectoryExists
 
-        // Determine unzip destination
-        if let customDir = cacheDirectory {
-            self.unzipDestination = customDir.appendingPathComponent("epub_\(identifier)", isDirectory: true)
-        } else {
-            let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            self.unzipDestination = docDir.appendingPathComponent("epubUnzip/\(identifier)", isDirectory: true)
-        }
+        // Use the provided destination URL directly
+        self.unzipDestination = destinationURL
     }
 
     /// Initialize with a pre-unzipped EPUB directory
@@ -89,6 +83,8 @@ public actor EPUBParser {
         var actualBaseURL = unzipDestination
         var containerXML = unzipDestination.appendingPathComponent("META-INF/container.xml")
 
+        assert(FileManager.default.fileExists(atPath: containerXML.path()))
+
         // Resolve the EPUB directory structure
         let directoryResolver = EPUBDirectoryResolver()
         let structureResult = directoryResolver.resolveEPUBStructure(from: unzipDestination)
@@ -99,14 +95,19 @@ public actor EPUBParser {
             throw EPUBParserError.contentOPFNotFound
         }
 
+        // Verify OPF file exists
+        guard FileManager.default.fileExists(atPath: contentOPFPath.path()) else {
+            throw EPUBParserError.contentOPFNotFound
+        }
+
         // Step 3: Set the OPF root directory as base for relative paths
         opfRootURL = contentOPFPath.deletingLastPathComponent()
 
         // Step 4: Parse metadata from the OPF file
-        var metadata = try parseMetadata(opfURL: contentOPFPath)
+        var metadata = try! parseMetadata(opfURL: contentOPFPath)
 
         // Step 5: Parse all manifest items from the OPF file
-        let manifestItems = try parseManifestItems(opfURL: contentOPFPath)
+        let manifestItems = try! parseManifestItems(opfURL: contentOPFPath)
 
         // Step 5.5: Find cover image and update metadata
         let coverImageURL = findCoverImage(in: manifestItems, baseURL: contentOPFPath.deletingLastPathComponent())
@@ -130,7 +131,7 @@ public actor EPUBParser {
         }
 
         // Step 6: Parse spine (reading order)
-        let spineItems = try parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
+        let spineItems = try! parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
 
         // Step 6.5: Normalize HTML extensions for files without them
         let (updatedManifestItems, updatedSpineItems, pathMappings) = try normalizeHTMLExtensions(
@@ -144,7 +145,7 @@ public actor EPUBParser {
         guard let tocPath = tocURL else {
             throw EPUBParserError.tocNCXNotFound
         }
-        var tableOfContents = try parseTableOfContents(at: tocPath)
+        var tableOfContents = try! parseTableOfContents(at: tocPath)
 
         // Step 7.5: Apply HTML extension normalization to TOC items
         tableOfContents = applyHTMLExtensionNormalizationToTOC(

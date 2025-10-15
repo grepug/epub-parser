@@ -123,7 +123,7 @@ extension EPUBDocument {
 
             // Direct path match
             if manifestPath == normalizedPath {
-                return spineItem.id
+                return spineItem.idref
             }
 
             // Match by filename if full path doesn't match
@@ -131,7 +131,7 @@ extension EPUBDocument {
             let targetFileName = URL(fileURLWithPath: normalizedPath).lastPathComponent
 
             if manifestFileName == targetFileName {
-                return spineItem.id
+                return spineItem.idref
             }
         }
 

@@ -33,8 +33,9 @@ internal class ContainerXMLParser: NSObject, XMLParserDelegate {
         }
 
         // First try the direct path
-        let directURL = URL(string: path, relativeTo: baseURL)
-        if let directURL = directURL, FileManager.default.fileExists(atPath: directURL.path) {
+        let directURL = baseURL.appendingPathComponent(path)
+
+        if FileManager.default.fileExists(atPath: directURL.path) {
             return directURL
         }
 
@@ -44,7 +45,7 @@ internal class ContainerXMLParser: NSObject, XMLParserDelegate {
             return subdirURL
         }
 
-        return directURL
+        return nil
     }
 
     private func findOPFInSubdirectories(path: String, baseURL: URL) -> URL? {
