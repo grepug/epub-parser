@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents a complete parsed EPUB document with all its components
-public struct EPUBDocument: Hashable, Sendable {
+public struct EPUBDocument: Hashable, Sendable, Codable {
     /// Metadata about the publication
     public let metadata: EPUBMetadata
 

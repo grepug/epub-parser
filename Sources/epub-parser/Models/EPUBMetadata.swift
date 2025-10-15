@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents metadata for an EPUB document
-public struct EPUBMetadata: Hashable, Sendable {
+public struct EPUBMetadata: Hashable, Sendable, Codable {
     // MARK: - Core Metadata
 
     /// Title of the publication

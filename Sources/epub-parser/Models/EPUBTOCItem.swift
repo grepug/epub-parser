@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents an item in the EPUB table of contents (hierarchical navigation)
-public struct EPUBTOCItem: Identifiable, Hashable, Sendable {
+public struct EPUBTOCItem: Identifiable, Hashable, Sendable, Codable {
     /// Unique identifier for this TOC item
     public let id: String
 

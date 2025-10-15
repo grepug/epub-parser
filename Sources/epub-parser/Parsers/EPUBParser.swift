@@ -79,6 +79,13 @@ public actor EPUBParser {
         // Step 1: Unzip the EPUB file if not already unzipped
         try unzipIfNeeded()
 
+        // Step 1.5: Check for cached EPUBDocument
+        if let cachedDocument = try loadCachedDocument() {
+            print("📋 Using cached EPUB document")
+            self.cachedDocument = cachedDocument
+            return cachedDocument
+        }
+
         // Step 2: Locate the content.opf file by parsing container.xml
         var actualBaseURL = unzipDestination
         var containerXML = unzipDestination.appendingPathComponent("META-INF/container.xml")
@@ -133,12 +140,23 @@ public actor EPUBParser {
         // Step 6: Parse spine (reading order)
         let spineItems = try! parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
 
-        // Step 6.5: Normalize HTML extensions for files without them
-        let (updatedManifestItems, updatedSpineItems, pathMappings) = try normalizeHTMLExtensions(
-            manifestItems: manifestItems,
-            spineItems: spineItems,
-            baseURL: opfRootURL ?? unzipDestination
-        )
+        // Step 6.5: Normalize HTML extensions for files without them (only for extracted EPUBs)
+        let (updatedManifestItems, updatedSpineItems, pathMappings): ([EPUBManifestItem], [EPUBSpineItem], [String: String])
+        if isPreUnzipped {
+            // Skip file modifications for pre-unzipped directories
+            updatedManifestItems = manifestItems
+            updatedSpineItems = spineItems
+            pathMappings = [:]
+        } else {
+            let result = try normalizeHTMLExtensions(
+                manifestItems: manifestItems,
+                spineItems: spineItems,
+                baseURL: opfRootURL ?? unzipDestination
+            )
+            updatedManifestItems = result.0
+            updatedSpineItems = result.1
+            pathMappings = result.2
+        }
 
         // Step 7: Parse table of contents
         tocURL = try findTocNCX(opfURL: contentOPFPath)
@@ -147,17 +165,21 @@ public actor EPUBParser {
         }
         var tableOfContents = try! parseTableOfContents(at: tocPath)
 
-        // Step 7.5: Apply HTML extension normalization to TOC items
-        tableOfContents = applyHTMLExtensionNormalizationToTOC(
-            tableOfContents: tableOfContents,
-            pathMappings: pathMappings
-        )
+        // Step 7.5: Apply HTML extension normalization to TOC items (only if we have path mappings)
+        if !pathMappings.isEmpty {
+            tableOfContents = applyHTMLExtensionNormalizationToTOC(
+                tableOfContents: tableOfContents,
+                pathMappings: pathMappings
+            )
+        }
 
-        // Step 7.6: Normalize HTML content (add charset meta tags and clean line breaks)
-        try normalizeHTMLContent(
-            spineItems: updatedSpineItems,
-            baseURL: opfRootURL ?? unzipDestination
-        )
+        // Step 7.6: Normalize HTML content (add charset meta tags and clean line breaks) (only for extracted EPUBs)
+        if !isPreUnzipped {
+            try normalizeHTMLContent(
+                spineItems: updatedSpineItems,
+                baseURL: opfRootURL ?? unzipDestination
+            )
+        }
 
         // Step 8: Create and cache the EPUBDocument
         let document = EPUBDocument(
@@ -169,6 +191,12 @@ public actor EPUBParser {
         )
 
         cachedDocument = document
+
+        // Step 8.5: Save document to cache (only for extracted EPUBs, not pre-unzipped directories)
+        if !isPreUnzipped {
+            try? saveCachedDocument(document)
+        }
+
         return document
     }
 
@@ -183,8 +211,8 @@ public actor EPUBParser {
     /// Can be called manually regardless of the cleanup parameter setting
     nonisolated public func cleanup() {
         // Don't delete pre-unzipped directories that the user provided (unless they explicitly requested cleanup)
-        guard !isPreUnzipped || shouldCleanup else { return }
-        try? FileManager.default.removeItem(at: unzipDestination)
+        // guard !isPreUnzipped || shouldCleanup else { return }
+        // try? FileManager.default.removeItem(at: unzipDestination)
     }
 
     // MARK: - Private Methods
@@ -685,6 +713,63 @@ public actor EPUBParser {
         print("   Exists: \(fileExists)")
 
         return coverURL
+    }
+
+    // MARK: - Caching Methods
+
+    /// Cache file name for storing parsed EPUB document
+    private var cacheFileName: String { ".epub_cache.json" }
+
+    /// Full path to the cache file
+    private var cacheFileURL: URL {
+        unzipDestination.appendingPathComponent(cacheFileName)
+    }
+
+    /// Load cached EPUBDocument if available and valid
+    private func loadCachedDocument() throws -> EPUBDocument? {
+        let cacheURL = cacheFileURL
+
+        // Check if cache file exists
+        guard fileManager.fileExists(atPath: cacheURL.path) else {
+            return nil
+        }
+
+        // prints the files in the cacheURL, recursively
+        print("📋 Found cache file at: \(cacheURL.path)")
+
+        let files = try? fileManager.contentsOfDirectory(atPath: unzipDestination.path)
+        print("📂 Files in unzip destination:")
+        files?.forEach { print("   - \($0)") }
+
+        do {
+            // Load and decode the cached document
+            let data = try Data(contentsOf: cacheURL)
+            let decoder = JSONDecoder()
+            let document = try decoder.decode(EPUBDocument.self, from: data)
+
+            return document
+        } catch {
+            // Cache is corrupted or format changed, delete it
+            print("⚠️ Cache file corrupted, will reparse: \(error)")
+            try? fileManager.removeItem(at: cacheURL)
+            return nil
+        }
+    }
+
+    /// Save EPUBDocument to cache
+    private func saveCachedDocument(_ document: EPUBDocument) throws {
+        let cacheURL = cacheFileURL
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(document)
+            try data.write(to: cacheURL)
+            print("💾 Saved EPUB document to cache: \(cacheFileName)")
+        } catch {
+            print("⚠️ Failed to save cache: \(error)")
+            // Don't throw - caching failure shouldn't break parsing
+        }
     }
 }
 
