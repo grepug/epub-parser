@@ -45,6 +45,7 @@ public actor EPUBParser {
     ///   - unzippedPath: Path to the unzipped EPUB directory
     ///   - cleanup: Whether to automatically cleanup the directory in deinit (defaults to false)
     /// - Throws: `EPUBParserError.invalidUnzippedPath` if the path is invalid or doesn't contain required EPUB files
+    /// - Throws: `EPUBParserError.cacheNotFound` if the cache file is missing (required for pre-unzipped directories)
     public init(unzippedPath: URL, cleanup: Bool = false) throws {
         self.sourceEPUBPath = nil
         self.isPreUnzipped = true
@@ -54,6 +55,12 @@ public actor EPUBParser {
 
         // Validate the unzipped path
         try validateUnzippedPath(unzippedPath)
+
+        // Require cache file to exist for pre-unzipped directories
+        let cacheURL = unzippedPath.appendingPathComponent(".epub_cache.json")
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else {
+            throw EPUBParserError.cacheNotFound
+        }
     }
 
     deinit {
@@ -117,8 +124,8 @@ public actor EPUBParser {
         let manifestItems = try! parseManifestItems(opfURL: contentOPFPath)
 
         // Step 5.5: Find cover image and update metadata
-        let coverImageURL = findCoverImage(in: manifestItems, baseURL: contentOPFPath.deletingLastPathComponent())
-        if let coverURL = coverImageURL {
+        let coverImagePath = findCoverImage(in: manifestItems, baseURL: contentOPFPath.deletingLastPathComponent(), rootURL: actualBaseURL)
+        if let coverPath = coverImagePath {
             metadata = EPUBMetadata(
                 title: metadata.title,
                 creators: metadata.creators,
@@ -133,7 +140,7 @@ public actor EPUBParser {
                 type: metadata.type,
                 source: metadata.source,
                 coverage: metadata.coverage,
-                coverImageURL: coverURL
+                coverImagePath: coverPath
             )
         }
 
@@ -204,6 +211,12 @@ public actor EPUBParser {
     /// - Returns: The OPF root URL if available, or the unzip destination
     public func baseURL() -> URL {
         return opfRootURL ?? unzipDestination
+    }
+
+    /// Get the unzipped root directory URL for reconstructing cover image paths
+    /// - Returns: The root directory of the unzipped EPUB content
+    public func unzippedRootURL() -> URL {
+        return unzipDestination
     }
 
     /// Clean up unzipped content to free disk space
@@ -651,7 +664,7 @@ public actor EPUBParser {
         return try metadataParser.parseMetadata(at: opfURL)
     }
 
-    private func findCoverImage(in manifestItems: [EPUBManifestItem], baseURL: URL) -> URL? {
+    private func findCoverImage(in manifestItems: [EPUBManifestItem], baseURL: URL, rootURL: URL) -> String? {
         var candidateCoverItem: EPUBManifestItem? = nil
 
         // Strategy 1: Look for item with id="cover-image" (must be an image)
@@ -690,29 +703,39 @@ public actor EPUBParser {
             return nil
         }
 
-        // Construct the full URL by appending the path to baseURL
-        // Always use appendingPathComponent to ensure proper path construction
-        let coverURL = baseURL.appendingPathComponent(trimmedPath)
+        // Verify the actual file exists by checking the absolute path
+        let absoluteCoverURL = baseURL.appendingPathComponent(trimmedPath)
+        let fileExists = FileManager.default.fileExists(atPath: absoluteCoverURL.path)
 
-        // Validate that we have a valid file URL
-        guard coverURL.isFileURL else {
-            print("⚠️ Cover URL is not a file URL: \(coverURL)")
+        guard fileExists else {
+            print("⚠️ Cover image file not found: \(absoluteCoverURL.path)")
             return nil
         }
 
-        // Validate that the URL actually points to a file, not just a directory
-        guard !coverURL.hasDirectoryPath else {
-            print("⚠️ Cover image URL is a directory, not a file: \(coverURL.path)")
-            return nil
+        // Calculate relative path from rootURL to the cover image
+        // This ensures that unzippedRootURL.appendingPathComponent(coverImagePath) works correctly
+        let rootPath = rootURL.path
+        let absolutePath = absoluteCoverURL.path
+
+        // Calculate relative path from rootURL to the cover image
+        let relativePath: String
+        if absolutePath.hasPrefix(rootPath + "/") {
+            // Remove rootPath prefix to get relative path
+            relativePath = String(absolutePath.dropFirst(rootPath.count + 1))
+        } else if absolutePath == rootPath {
+            // Edge case: cover image is at root level
+            relativePath = absoluteCoverURL.lastPathComponent
+        } else {
+            // Fallback: use the original trimmed path
+            relativePath = trimmedPath
         }
 
-        // Verify file exists
-        let fileExists = FileManager.default.fileExists(atPath: coverURL.path)
-        print("📸 Cover image URL created: \(coverURL.absoluteString)")
-        print("   Path: \(coverURL.path)")
+        print("📸 Cover image path created: \(absoluteCoverURL.absoluteString)")
+        print("   Path: \(absoluteCoverURL.path)")
         print("   Exists: \(fileExists)")
+        print("   Relative to root: \(relativePath)")
 
-        return coverURL
+        return relativePath
     }
 
     // MARK: - Caching Methods
@@ -734,18 +757,33 @@ public actor EPUBParser {
             return nil
         }
 
-        // prints the files in the cacheURL, recursively
         print("📋 Found cache file at: \(cacheURL.path)")
-
-        let files = try? fileManager.contentsOfDirectory(atPath: unzipDestination.path)
-        print("📂 Files in unzip destination:")
-        files?.forEach { print("   - \($0)") }
 
         do {
             // Load and decode the cached document
             let data = try Data(contentsOf: cacheURL)
             let decoder = JSONDecoder()
-            let document = try decoder.decode(EPUBDocument.self, from: data)
+            let cachedDocument = try decoder.decode(EPUBDocument.self, from: data)
+
+            // Convert cached relative paths back to absolute paths using current unzipDestination
+            let absoluteBaseURL = convertRelativeToAbsolutePath(cachedDocument.baseURL.path)
+
+            // Validate that the cached paths still exist
+            guard fileManager.fileExists(atPath: absoluteBaseURL.path) else {
+                print("⚠️ Cached base path no longer exists, will reparse")
+                try? fileManager.removeItem(at: cacheURL)
+                return nil
+            }
+
+            // Create document with corrected absolute paths
+            // Note: Cover image paths are already relative strings, no conversion needed
+            let document = EPUBDocument(
+                metadata: cachedDocument.metadata,
+                manifest: cachedDocument.manifest,
+                spineItems: cachedDocument.spineItems,
+                tableOfContents: cachedDocument.tableOfContents,
+                baseURL: absoluteBaseURL
+            )
 
             return document
         } catch {
@@ -761,15 +799,56 @@ public actor EPUBParser {
         let cacheURL = cacheFileURL
 
         do {
+            // Convert absolute baseURL to relative path for caching
+            let relativeBaseURL = convertAbsoluteToRelativePath(document.baseURL)
+
+            // Create cacheable document with relative paths
+            // Note: Cover image paths are already relative strings, no conversion needed
+            let cacheableDocument = EPUBDocument(
+                metadata: document.metadata,
+                manifest: document.manifest,
+                spineItems: document.spineItems,
+                tableOfContents: document.tableOfContents,
+                baseURL: relativeBaseURL
+            )
+
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(document)
+            let data = try encoder.encode(cacheableDocument)
             try data.write(to: cacheURL)
             print("💾 Saved EPUB document to cache: \(cacheFileName)")
         } catch {
             print("⚠️ Failed to save cache: \(error)")
             // Don't throw - caching failure shouldn't break parsing
         }
+    }
+
+    // MARK: - Path Conversion Helpers
+
+    /// Convert absolute path to relative path for caching
+    private func convertAbsoluteToRelativePath(_ absoluteURL: URL) -> URL {
+        let absolutePath = absoluteURL.path
+        let basePath = unzipDestination.path
+
+        // If the absolute path starts with our base path, make it relative
+        if absolutePath.hasPrefix(basePath + "/") {
+            let relativePath = String(absolutePath.dropFirst(basePath.count + 1))
+            return URL(fileURLWithPath: relativePath)
+        } else if absolutePath == basePath {
+            // Base path itself becomes empty relative path
+            return URL(fileURLWithPath: ".")
+        }
+
+        // Fallback: return as-is if we can't make it relative
+        return absoluteURL
+    }
+
+    /// Convert relative path from cache back to absolute path
+    private func convertRelativeToAbsolutePath(_ relativePath: String) -> URL {
+        if relativePath == "." {
+            return unzipDestination
+        }
+        return unzipDestination.appendingPathComponent(relativePath)
     }
 }
 

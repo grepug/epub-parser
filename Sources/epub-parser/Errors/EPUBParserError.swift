@@ -14,6 +14,7 @@ public enum EPUBParserError: LocalizedError {
     case missingContainerXML
     case invalidEPUBStructure(String)
     case invalidUnzippedPath(String)
+    case cacheNotFound
 
     public var errorDescription: String? {
         switch self {
@@ -41,6 +42,8 @@ public enum EPUBParserError: LocalizedError {
             return "Invalid EPUB structure: \(description)"
         case .invalidUnzippedPath(let reason):
             return "Invalid unzipped EPUB path: \(reason)"
+        case .cacheNotFound:
+            return "Cache file not found. Pre-unzipped EPUB directory must contain .epub_cache.json file"
         }
     }
 }

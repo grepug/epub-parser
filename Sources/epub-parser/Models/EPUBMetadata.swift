@@ -43,8 +43,8 @@ public struct EPUBMetadata: Hashable, Sendable, Codable {
     /// Coverage (spatial or temporal)
     public let coverage: String?
 
-    /// Cover image absolute URL
-    public let coverImageURL: URL?
+    /// Cover image relative path
+    public let coverImagePath: String?
 
     /// Any additional metadata not captured above
     public let additionalMetadata: [String: String]
@@ -64,7 +64,7 @@ public struct EPUBMetadata: Hashable, Sendable, Codable {
         type: String? = nil,
         source: String? = nil,
         coverage: String? = nil,
-        coverImageURL: URL? = nil,
+        coverImagePath: String? = nil,
         additionalMetadata: [String: String] = [:]
     ) {
         self.title = title
@@ -80,7 +80,7 @@ public struct EPUBMetadata: Hashable, Sendable, Codable {
         self.type = type
         self.source = source
         self.coverage = coverage
-        self.coverImageURL = coverImageURL
+        self.coverImagePath = coverImagePath
         self.additionalMetadata = additionalMetadata
     }
 }

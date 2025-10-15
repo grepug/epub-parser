@@ -594,7 +594,7 @@ internal class MetadataParser: NSObject, XMLParserDelegate {
                 type: type,
                 source: source,
                 coverage: coverage,
-                coverImageURL: nil  // Will be set later by EPUBParser
+                coverImagePath: nil  // Will be set later by EPUBParser
             )
         } else if let error = parser.parserError {
             throw error
