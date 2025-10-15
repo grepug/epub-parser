@@ -258,7 +258,7 @@ public actor EPUBParser {
                 )
                 return EPUBSpineItem(
                     id: spineItem.id,
-                    idref: spineItem.idref,
+                    index: spineItem.index,
                     linear: spineItem.linear,
                     manifestItem: updatedManifestItem
                 )

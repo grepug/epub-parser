@@ -514,8 +514,8 @@ internal class SpineParser: NSObject, XMLParserDelegate {
             let isLinear = linearString.lowercased() != "no"
 
             let spineItem = EPUBSpineItem(
-                id: "spine_\(spineIndex)",
-                idref: idref,
+                id: idref,
+                index: spineIndex,
                 linear: isLinear,
                 manifestItem: manifestItem
             )

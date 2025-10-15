@@ -284,22 +284,22 @@ struct DestinationURLInitTests {
 
         // Test spine item lookup
         if let firstSpineItem = document.spine.first,
-            let manifestItem = document.manifestItem(withId: firstSpineItem.idref)
+            let manifestItem = document.manifestItem(withId: firstSpineItem.id)
         {
 
             // Test string-based lookup
             let spineId1 = document.spineItemId(for: manifestItem.path)
-            #expect(spineId1 == firstSpineItem.idref)
+            #expect(spineId1 == firstSpineItem.id)
 
             // Test URL-based lookup
             let itemURL = URL(string: manifestItem.path)!
             let spineId2 = document.spineItemId(for: itemURL)
-            #expect(spineId2 == firstSpineItem.idref)
+            #expect(spineId2 == firstSpineItem.id)
 
             // Test with fragment
             let urlWithFragment = URL(string: manifestItem.path + "#section1")!
             let spineId3 = document.spineItemId(for: urlWithFragment)
-            #expect(spineId3 == firstSpineItem.idref)
+            #expect(spineId3 == firstSpineItem.id)
         }
 
         // Cleanup

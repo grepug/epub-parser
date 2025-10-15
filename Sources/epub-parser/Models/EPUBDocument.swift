@@ -84,7 +84,7 @@ extension EPUBDocument {
         spineItems.filter { $0.linear }
     }
 
-    /// Find the spine item ID for a given URL/href
+    /// Find the spine item ID for a given href (path or URL string)
     /// This method handles both relative and absolute URLs, with or without fragments
     /// Returns nil if no matching spine item is found
     public func spineItemId(for href: String) -> String? {
@@ -123,7 +123,7 @@ extension EPUBDocument {
 
             // Direct path match
             if manifestPath == normalizedPath {
-                return spineItem.idref
+                return spineItem.id
             }
 
             // Match by filename if full path doesn't match
@@ -131,7 +131,25 @@ extension EPUBDocument {
             let targetFileName = URL(fileURLWithPath: normalizedPath).lastPathComponent
 
             if manifestFileName == targetFileName {
-                return spineItem.idref
+                return spineItem.id
+            }
+        }
+
+        // Additional fallback: Try path extension variations for HTML files
+        // This handles cases where navigation uses .html but spine items have .xhtml or vice versa
+        if normalizedPath.hasSuffix(".html") || normalizedPath.hasSuffix(".xhtml") || normalizedPath.hasSuffix(".htm") {
+            // Use string manipulation to preserve relative path structure
+            let pathExtension = URL(fileURLWithPath: normalizedPath).pathExtension
+            let basePath = String(normalizedPath.dropLast(pathExtension.count + 1))  // Remove .extension
+            let htmlExtensions = ["html", "xhtml", "htm"]
+
+            for ext in htmlExtensions {
+                let testPath = basePath + "." + ext
+                for spineItem in spineItems {
+                    if spineItem.manifestItem.path == testPath {
+                        return spineItem.id
+                    }
+                }
             }
         }
 

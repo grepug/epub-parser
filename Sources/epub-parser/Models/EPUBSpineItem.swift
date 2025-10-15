@@ -2,11 +2,11 @@ import Foundation
 
 /// Represents an item in the EPUB spine (reading order)
 public struct EPUBSpineItem: Identifiable, Hashable, Sendable, Codable {
-    /// Unique identifier for this spine item
+    /// EPUB manifest item identifier (from OPF file)
     public let id: String
 
-    /// Reference to the manifest item ID
-    public let idref: String
+    /// Sequential index in the spine (0-based)
+    public let index: Int
 
     /// Whether this item is part of the linear reading order
     public let linear: Bool
@@ -15,9 +15,9 @@ public struct EPUBSpineItem: Identifiable, Hashable, Sendable, Codable {
     public let manifestItem: EPUBManifestItem
 
     /// Initialize a spine item
-    public init(id: String, idref: String, linear: Bool, manifestItem: EPUBManifestItem) {
+    public init(id: String, index: Int, linear: Bool, manifestItem: EPUBManifestItem) {
         self.id = id
-        self.idref = idref
+        self.index = index
         self.linear = linear
         self.manifestItem = manifestItem
     }
