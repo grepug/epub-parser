@@ -144,10 +144,10 @@ public actor EPUBParser {
         opfRootURL = contentOPFPath.deletingLastPathComponent()
 
         // Step 4: Parse metadata from the OPF file
-        var metadata = try! parseMetadata(opfURL: contentOPFPath)
+        var metadata = try parseMetadata(opfURL: contentOPFPath)
 
         // Step 5: Parse all manifest items from the OPF file
-        let manifestItems = try! parseManifestItems(opfURL: contentOPFPath)
+        let manifestItems = try parseManifestItems(opfURL: contentOPFPath)
 
         // Step 5.5: Find cover image and update metadata
         let coverImagePath = findCoverImage(in: manifestItems, baseURL: contentOPFPath.deletingLastPathComponent(), rootURL: actualBaseURL)
@@ -171,7 +171,7 @@ public actor EPUBParser {
         }
 
         // Step 6: Parse spine (reading order)
-        let spineItems = try! parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
+        let spineItems = try parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
 
         // Step 6.5: Normalize HTML extensions for files without them (only for extracted EPUBs)
         let (updatedManifestItems, updatedSpineItems, pathMappings): ([EPUBManifestItem], [EPUBSpineItem], [String: String])
@@ -262,7 +262,6 @@ public actor EPUBParser {
         spineItems: [EPUBSpineItem],
         baseURL: URL
     ) throws -> ([EPUBManifestItem], [EPUBSpineItem], [String: String]) {
-
         var pathMappings: [String: String] = [:]
 
         // Iterate through spine items and check if HTML files need .html extension
