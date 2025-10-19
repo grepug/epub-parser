@@ -7,7 +7,7 @@ public actor EPUBParser {
 
     private let fileManager = FileManager.default
     private let sourceEPUBPath: URL?
-    private let unzipDestination: URL
+    let unzipDestination: URL
     private let isPreUnzipped: Bool
     private let shouldCleanup: Bool
     private let skipUnzipIfDirectoryExists: Bool
@@ -40,7 +40,11 @@ public actor EPUBParser {
             )
         }
 
-        return try await parser.processEPUB()
+        let document = try await parser.processEPUB()
+        
+        assert(document.spineItems.isEmpty == false)
+        
+        return document
     }
 
     // MARK: - Initialization
@@ -51,7 +55,7 @@ public actor EPUBParser {
     ///   - destinationURL: Custom destination URL for unzipping the EPUB
     ///   - skipUnzipIfDirectoryExists: Whether to skip unzipping if directory already exists
     ///   - cleanup: Whether to automatically cleanup unzipped files in deinit (defaults to false)
-    private init(
+    init(
         epubPath: URL,
         destinationURL: URL,
         skipUnzipIfDirectoryExists: Bool = true,
@@ -72,7 +76,7 @@ public actor EPUBParser {
     ///   - cleanup: Whether to automatically cleanup the directory in deinit (defaults to false)
     /// - Throws: `EPUBParserError.invalidUnzippedPath` if the path is invalid or doesn't contain required EPUB files
     /// - Throws: `EPUBParserError.cacheNotFound` if the cache file is missing (required for pre-unzipped directories)
-    private init(unzippedPath: URL, cleanup: Bool = false) throws {
+    init(unzippedPath: URL, cleanup: Bool = false) throws {
         self.sourceEPUBPath = nil
         self.isPreUnzipped = true
         self.unzipDestination = unzippedPath

@@ -74,11 +74,6 @@ extension EPUBDocument {
         EPUBTOCItem.flattenAll(tableOfContents)
     }
 
-    /// Alias for spineItems for backward compatibility
-    public var spine: [EPUBSpineItem] {
-        spineItems
-    }
-
     /// Get only the spine items that are part of linear reading order
     public var linearSpineItems: [EPUBSpineItem] {
         spineItems.filter { $0.linear }
