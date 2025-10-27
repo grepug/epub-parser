@@ -79,6 +79,39 @@ extension EPUBDocument {
         spineItems.filter { $0.linear }
     }
 
+    /// Get the full URL for the cover image
+    /// Returns nil if no cover image path is available in metadata
+    /// Note: Cover image paths are relative to the unzipped EPUB root, not the OPF directory
+    public var coverURL: URL? {
+        guard let coverImagePath = metadata.coverImagePath else {
+            return nil
+        }
+
+        // Cover image paths are calculated relative to the unzipped root directory
+        // If baseURL is an OPF directory (like /epub/ops/), we need to go up to the root
+        let unzippedRoot = findUnzippedRoot(from: baseURL)
+        return unzippedRoot.appendingPathComponent(coverImagePath)
+    }
+
+    /// Find the unzipped root directory from the current baseURL
+    /// This handles cases where baseURL points to an OPF subdirectory
+    private func findUnzippedRoot(from baseURL: URL) -> URL {
+        // Check if this looks like an OPF subdirectory (contains META-INF at parent level)
+        var testURL = baseURL
+
+        // Go up directories until we find the one containing META-INF
+        while !testURL.path.isEmpty && testURL.path != "/" {
+            let metaInfURL = testURL.appendingPathComponent("META-INF")
+            if FileManager.default.fileExists(atPath: metaInfURL.path) {
+                return testURL
+            }
+            testURL = testURL.deletingLastPathComponent()
+        }
+
+        // Fallback: return the original baseURL if we can't find META-INF
+        return baseURL
+    }
+
     /// Find the spine item ID for a given href (path or URL string)
     /// This method handles both relative and absolute URLs, with or without fragments
     /// Returns nil if no matching spine item is found
