@@ -171,9 +171,19 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
     private var currentDepth = 0
 
     func parseNCX(at url: URL) throws -> [EPUBTOCItem] {
-        guard let parser = XMLParser(contentsOf: url) else {
+        // Read the file content first to sanitize it
+        guard let originalContent = try? String(contentsOf: url, encoding: .utf8) else {
             throw EPUBParserError.ncxParsingFailed
         }
+
+        // Sanitize XML content to fix common issues like unescaped ampersands
+        let sanitizedContent = sanitizeXMLContent(originalContent)
+
+        // Create parser with sanitized content
+        guard let sanitizedData = sanitizedContent.data(using: .utf8) else {
+            throw EPUBParserError.ncxParsingFailed
+        }
+        let parser = XMLParser(data: sanitizedData)
 
         tocItems = []
         navPointStack = []
@@ -187,6 +197,22 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
         } else {
             throw EPUBParserError.ncxParseError
         }
+    }
+
+    /// Sanitize XML content to fix common malformed XML issues
+    private func sanitizeXMLContent(_ content: String) -> String {
+        var sanitized = content
+
+        // Fix unescaped ampersands that are not part of valid XML entities
+        // This regex finds & that are not followed by a valid entity name and semicolon
+        let ampersandPattern = "&(?!(amp|lt|gt|quot|apos|#\\d+|#x[0-9a-fA-F]+);)"
+        sanitized = sanitized.replacingOccurrences(
+            of: ampersandPattern,
+            with: "&amp;",
+            options: .regularExpression
+        )
+
+        return sanitized
     }
 
     // MARK: - XMLParserDelegate

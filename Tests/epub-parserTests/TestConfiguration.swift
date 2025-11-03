@@ -9,6 +9,7 @@ struct TestConfiguration {
         // Example: "/Users/username/Downloads/sample.epub"
         "/Users/kai/Downloads/epub/Build.epub",
         "/Users/kai/Downloads/epub/TheEconomist.2025.11.01.epub",
+        "/Users/kai/Downloads/epub/考研英语黄皮书 2015.12~2016.5.epub",
     ]
 
     /// Test directories to scan for EPUB files

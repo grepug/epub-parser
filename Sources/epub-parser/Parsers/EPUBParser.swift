@@ -148,10 +148,20 @@ public actor EPUBParser {
         opfRootURL = contentOPFPath.deletingLastPathComponent()
 
         // Step 4: Parse metadata from the OPF file
-        var metadata = try parseMetadata(opfURL: contentOPFPath)
+        var metadata: EPUBMetadata
+        do {
+            metadata = try parseMetadata(opfURL: contentOPFPath)
+        } catch {
+            throw error
+        }
 
-        // Step 5: Parse all manifest items from the OPF file
-        let manifestItems = try parseManifestItems(opfURL: contentOPFPath)
+        // Step 5: Parse manifest items from the OPF file
+        let manifestItems: [EPUBManifestItem]
+        do {
+            manifestItems = try parseManifestItems(opfURL: contentOPFPath)
+        } catch {
+            throw error
+        }
 
         // Step 5.5: Find cover image and update metadata
         let coverImagePath = findCoverImage(in: manifestItems, baseURL: contentOPFPath.deletingLastPathComponent(), rootURL: actualBaseURL)
@@ -175,7 +185,12 @@ public actor EPUBParser {
         }
 
         // Step 6: Parse spine (reading order)
-        let spineItems = try parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
+        let spineItems: [EPUBSpineItem]
+        do {
+            spineItems = try parseSpine(opfURL: contentOPFPath, manifestItems: manifestItems)
+        } catch {
+            throw error
+        }
 
         // Step 6.5: Normalize HTML extensions for files without them (only for extracted EPUBs)
         let (updatedManifestItems, updatedSpineItems, pathMappings): ([EPUBManifestItem], [EPUBSpineItem], [String: String])
@@ -200,7 +215,12 @@ public actor EPUBParser {
         guard let tocPath = tocURL else {
             throw EPUBParserError.tocNCXNotFound
         }
-        var tableOfContents = try parseTableOfContents(at: tocPath)
+        var tableOfContents: [EPUBTOCItem]
+        do {
+            tableOfContents = try parseTableOfContents(at: tocPath)
+        } catch {
+            throw error
+        }
 
         // Step 7.5: Apply HTML extension normalization to TOC items (only if we have path mappings)
         if !pathMappings.isEmpty {
