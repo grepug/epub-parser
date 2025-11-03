@@ -57,7 +57,7 @@ struct DestinationURLInitTests {
 
         // Verify document was created
         #expect(document.metadata.title?.isEmpty == false)
-        #expect(document.spine.isEmpty == false)
+        #expect(document.spineItems.isEmpty == false)
 
         // Verify destination directory exists
         var isDirectory: ObjCBool = false
@@ -283,7 +283,7 @@ struct DestinationURLInitTests {
         let document = try await parser.processEPUB()
 
         // Test spine item lookup
-        if let firstSpineItem = document.spine.first,
+        if let firstSpineItem = document.spineItems.first,
             let manifestItem = document.manifestItem(withId: firstSpineItem.id)
         {
 

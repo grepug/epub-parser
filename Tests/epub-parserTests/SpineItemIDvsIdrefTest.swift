@@ -29,7 +29,7 @@ struct SpineItemIDvsIndexTest {
         print("\n=== SPINE ITEM ID vs INDEX DEBUG ===")
 
         // Debug the first few spine items to understand the structure
-        for (index, spineItem) in document.spine.prefix(5).enumerated() {
+        for (index, spineItem) in document.spineItems.prefix(5).enumerated() {
             print("[\(index)] Spine Item:")
             print("  spineItem.id: '\(spineItem.id)'")  // Now contains EPUB manifest ID (e.g., "ch01" or "cover")
             print("  spineItem.index: \(spineItem.index)")  // Sequential index (e.g., 0, 1, 2)
@@ -39,7 +39,7 @@ struct SpineItemIDvsIndexTest {
         }
 
         // Test what spineItemId() currently returns
-        if let firstSpineItem = document.spine.first {
+        if let firstSpineItem = document.spineItems.first {
             let manifestPath = firstSpineItem.manifestItem.path
             let result = document.spineItemId(for: manifestPath)
 
@@ -50,10 +50,10 @@ struct SpineItemIDvsIndexTest {
 
         // Check what the user might be looking for
         print("Now spine IDs contain the EPUB manifest identifiers:")
-        let spineIds = document.spine.map { $0.id }
+        let spineIds = document.spineItems.map { $0.id }
         print("spineItems.map { $0.id }: \(spineIds)")
 
-        let spineIndices = document.spine.map { $0.index }
+        let spineIndices = document.spineItems.map { $0.index }
         print("spineItems.map { $0.index }: \(spineIndices)")
 
         // Check if "ch01" is in the IDs

@@ -28,7 +28,7 @@ struct SpineIDExtensionFallbackTest {
         
         print("\n=== HTML EXTENSION FALLBACK DEBUG ===")
         
-        if let firstSpineItem = document.spine.first {
+        if let firstSpineItem = document.spineItems.first {
             let originalPath = firstSpineItem.manifestItem.path
             print("Original path: '\(originalPath)'")
             
@@ -41,7 +41,7 @@ struct SpineIDExtensionFallbackTest {
             
             // Step 1: Check for direct match
             print("Step 1: Checking direct matches...")
-            for (index, spineItem) in document.spine.enumerated() {
+            for (index, spineItem) in document.spineItems.enumerated() {
                 let manifestPath = spineItem.manifestItem.path
                 if manifestPath == htmlPath {
                     print("  Direct match found at index \(index): '\(manifestPath)'")
@@ -54,7 +54,7 @@ struct SpineIDExtensionFallbackTest {
             let targetFileName = URL(fileURLWithPath: htmlPath).lastPathComponent
             print("  Target filename: '\(targetFileName)'")
             
-            for (index, spineItem) in document.spine.enumerated() {
+            for (index, spineItem) in document.spineItems.enumerated() {
                 let manifestPath = spineItem.manifestItem.path
                 let manifestFileName = URL(fileURLWithPath: manifestPath).lastPathComponent
                 if manifestFileName == targetFileName {
@@ -73,7 +73,7 @@ struct SpineIDExtensionFallbackTest {
                 let testPath = basePath + "." + ext
                 print("  Testing extension '\(ext)': '\(testPath)'")
                 
-                for (index, spineItem) in document.spine.enumerated() {
+                for (index, spineItem) in document.spineItems.enumerated() {
                     if spineItem.manifestItem.path == testPath {
                         print("    ✅ Match found at index \(index): '\(spineItem.manifestItem.path)'")
                         print("    Should return idref: '\(spineItem.id)'")
@@ -127,7 +127,7 @@ struct SpineIDExtensionFallbackTest {
                         let fallbackTestPath = fallbackBasePath + "." + ext
                         print("  fallbackTestPath: '\(fallbackTestPath)'")
                         
-                        for (index, spineItem) in document.spine.prefix(3).enumerated() {
+                        for (index, spineItem) in document.spineItems.prefix(3).enumerated() {
                             let spinePath = spineItem.manifestItem.path
                             print("    Comparing '\(fallbackTestPath)' with spine[\(index)]: '\(spinePath)'")
                             if spinePath == fallbackTestPath {

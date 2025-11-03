@@ -39,11 +39,11 @@ struct SimpleDestinationURLTest {
             print("Successfully processed EPUB!")
             print("Title: \(document.metadata.title ?? "No title")")
             print("Manifest items count: \(document.manifest.count)")
-            print("Spine items count: \(document.spine.count)")
+            print("Spine items count: \(document.spineItems.count)")
 
             // Basic validation
             #expect(document.manifest.count > 0)
-            #expect(document.spine.count > 0)
+            #expect(document.spineItems.count > 0)
 
         } catch {
             print("Error processing EPUB: \(error)")
@@ -125,7 +125,7 @@ struct SimpleDestinationURLTest {
 
                 // Basic validation
                 #expect(document.manifest.count > 0, "Manifest should not be empty")
-                #expect(document.spine.count > 0, "Spine should not be empty")
+                #expect(document.spineItems.count > 0, "Spine should not be empty")
 
             } catch {
                 print("❌ Failed to process \(epubURL.lastPathComponent): \(error)")

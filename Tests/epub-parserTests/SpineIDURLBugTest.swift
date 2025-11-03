@@ -29,7 +29,7 @@ struct SpineIDURLBugTest {
         print("\n=== SPINE ID URL ABSOLUTE STRING BUG TEST ===")
         
         // Test the bug with the first spine item
-        guard let firstSpineItem = document.spine.first else {
+        guard let firstSpineItem = document.spineItems.first else {
             Issue.record("No spine items found in document")
             return
         }
@@ -134,7 +134,7 @@ struct SpineIDURLBugTest {
         print("\n=== TESTING PROPOSED FIX ===")
         
         // Test multiple spine items
-        for (index, spineItem) in document.spine.prefix(5).enumerated() {
+        for (index, spineItem) in document.spineItems.prefix(5).enumerated() {
             let manifestPath = spineItem.manifestItem.path
             let expectedId = spineItem.id
             

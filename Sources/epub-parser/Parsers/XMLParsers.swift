@@ -204,6 +204,7 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
             currentPlayOrder = Int(attributeDict["playOrder"] ?? "0") ?? 0
         case "navLabel":
             isParsingNavLabel = true
+            currentTitle = ""  // Reset title when starting a new navLabel
         case "text" where isParsingNavLabel:
             isParsingText = true
         case "content":
@@ -243,13 +244,8 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
                 tocItem.children?.insert(navPointStack.removeLast().item, at: 0)
             }
 
-            if currentDepth == 1 {
-                // Root level item - will be added to tocItems when we finish all nested items
-                navPointStack.append((tocItem, currentDepth))
-            } else {
-                // Nested item
-                navPointStack.append((tocItem, currentDepth))
-            }
+            // Add to stack regardless of depth
+            navPointStack.append((tocItem, currentDepth))
 
             currentID = ""
             currentTitle = ""
@@ -260,11 +256,20 @@ internal class TOCNCXParser: NSObject, XMLParserDelegate {
             isParsingNavLabel = false
         case "text":
             isParsingText = false
-        case "ncx":
-            // At the end, gather all root level items
-            while let last = navPointStack.last, last.depth == 1 {
-                tocItems.insert(navPointStack.removeLast().item, at: 0)
+        case "ncx", "navMap":
+            // At the end of ncx or navMap, gather all items at depth 1 or 2 (depending on structure)
+            print("🔍 [NCX Parser] \(elementName) ended. Stack count: \(navPointStack.count)")
+
+            // Find the minimum depth in the stack
+            let minDepth = navPointStack.map { $0.depth }.min() ?? 1
+            print("🔍 [NCX Parser] Minimum depth in stack: \(minDepth)")
+
+            while let last = navPointStack.last, last.depth == minDepth {
+                let item = navPointStack.removeLast().item
+                tocItems.insert(item, at: 0)
+                print("🔍 [NCX Parser] Moved item to tocItems: \(item.title) (depth: \(last.depth))")
             }
+            print("🔍 [NCX Parser] Final tocItems count: \(tocItems.count)")
         default:
             break
         }

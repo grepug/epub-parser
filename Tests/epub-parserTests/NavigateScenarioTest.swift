@@ -46,7 +46,7 @@ struct NavigateScenarioTest {
             print("✅ Found spine ID: '\(spineId)'")
             
             // Line 149 equivalent - Validate that the spine ID exists in the spine
-            let spineItem = document.spine.first { $0.id == spineId }
+            let spineItem = document.spineItems.first { $0.id == spineId }
             
             // This would cause an assertion failure if spineItem is nil
             guard let spineItem = spineItem else {
@@ -64,7 +64,7 @@ struct NavigateScenarioTest {
         var successCount = 0
         var failureCount = 0
         
-        for (index, spineItem) in document.spine.enumerated() {
+        for (index, spineItem) in document.spineItems.enumerated() {
             let path = spineItem.manifestItem.path
             let success = simulateNavigateFunction(toPath: path)
             
@@ -104,7 +104,7 @@ struct NavigateScenarioTest {
         // Test 3: Navigate with URLs that might cause the absoluteString issue
         print("\n--- Test 3: Navigate with URL objects ---")
         
-        if let firstSpineItem = document.spine.first {
+        if let firstSpineItem = document.spineItems.first {
             let manifestPath = firstSpineItem.manifestItem.path
             
             // Test with different URL types
@@ -141,7 +141,7 @@ struct NavigateScenarioTest {
         // Test 4: Navigate with modified paths (after HTML extension normalization)
         print("\n--- Test 4: Navigate with HTML extension modified paths ---")
         
-        for spineItem in document.spine.prefix(3) {
+        for spineItem in document.spineItems.prefix(3) {
             let originalPath = spineItem.manifestItem.path
             
             // Simulate what might happen if someone tries to navigate to an old path
@@ -226,7 +226,7 @@ struct NavigateScenarioTest {
         // Test URL-based lookups that might behave differently
         print("\n--- URL-based lookups ---")
         
-        if let firstSpineItem = document.spine.first {
+        if let firstSpineItem = document.spineItems.first {
             let manifestPath = firstSpineItem.manifestItem.path
             
             // Test various URL configurations
