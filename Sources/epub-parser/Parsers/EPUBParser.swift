@@ -41,9 +41,9 @@ public actor EPUBParser {
         }
 
         let document = try await parser.processEPUB()
-        
+
         assert(document.spineItems.isEmpty == false)
-        
+
         return document
     }
 
@@ -200,7 +200,7 @@ public actor EPUBParser {
         guard let tocPath = tocURL else {
             throw EPUBParserError.tocNCXNotFound
         }
-        var tableOfContents = try! parseTableOfContents(at: tocPath)
+        var tableOfContents = try parseTableOfContents(at: tocPath)
 
         // Step 7.5: Apply HTML extension normalization to TOC items (only if we have path mappings)
         if !pathMappings.isEmpty {
