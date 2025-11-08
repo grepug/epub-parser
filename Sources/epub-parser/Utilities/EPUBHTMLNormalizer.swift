@@ -104,11 +104,28 @@ public struct EPUBHTMLNormalizer {
                 }
                 
                 // Replace all whitespace sequences (including newlines) with a single space
-                let normalizedText = originalText.replacingOccurrences(
+                var normalizedText = originalText.replacingOccurrences(
                     of: "\\s+",
                     with: " ",
                     options: .regularExpression
-                ).trimmingCharacters(in: .whitespaces)
+                )
+                
+                // Only preserve leading/trailing spaces if:
+                // - The original had a SINGLE space (not newline/tab)
+                // - This indicates intentional spacing (like between inline elements)
+                let originalHasSingleLeadingSpace = originalText.first == " " && originalText.count > 1 && !originalText.prefix(2).contains("\n")
+                let originalHasSingleTrailingSpace = originalText.last == " " && originalText.count > 1 && !originalText.suffix(2).contains("\n")
+                
+                // Trim whitespace
+                normalizedText = normalizedText.trimmingCharacters(in: .whitespaces)
+                
+                // Restore single spaces only if they were intentional (not from newlines/indentation)
+                if originalHasSingleLeadingSpace && !normalizedText.isEmpty {
+                    normalizedText = " " + normalizedText
+                }
+                if originalHasSingleTrailingSpace && !normalizedText.isEmpty {
+                    normalizedText = normalizedText + " "
+                }
                 
                 // Replace in the cleaned string
                 let replacement = ">\(normalizedText)<"
