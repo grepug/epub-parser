@@ -11,6 +11,7 @@ public actor EPUBParser {
     private let isPreUnzipped: Bool
     private let shouldCleanup: Bool
     private let skipUnzipIfDirectoryExists: Bool
+    private let normalizationVersion: EPUBNormalizationVersion
 
     private var opfRootURL: URL? = nil
     private var tocURL: URL? = nil
@@ -22,20 +23,27 @@ public actor EPUBParser {
     public static func parse(
         destinationURL: URL,
         epubSourceURL: URL? = nil,
+        normalizationVersion: EPUBNormalizationVersion = .current,
         cleanup: Bool = false
     ) async throws -> EPUBDocument {
         let parser: EPUBParser
+        
+        print("@@ desti", destinationURL)
+        
+        assert(destinationURL.lastPathComponent.contains("v"))
 
         if let epubSourceURL {
             parser = EPUBParser(
                 epubPath: epubSourceURL,
                 destinationURL: destinationURL,
                 skipUnzipIfDirectoryExists: true,
-                cleanup: cleanup
+                normalizationVersion: normalizationVersion,
+                cleanup: cleanup,
             )
         } else {
             parser = try EPUBParser(
                 unzippedPath: destinationURL,
+                normalizationVersion: normalizationVersion,
                 cleanup: cleanup
             )
         }
@@ -55,16 +63,19 @@ public actor EPUBParser {
     ///   - destinationURL: Custom destination URL for unzipping the EPUB
     ///   - skipUnzipIfDirectoryExists: Whether to skip unzipping if directory already exists
     ///   - cleanup: Whether to automatically cleanup unzipped files in deinit (defaults to false)
+    ///   - normalizationVersion: HTML normalization version to use (defaults to .current)
     init(
         epubPath: URL,
         destinationURL: URL,
         skipUnzipIfDirectoryExists: Bool = true,
-        cleanup: Bool = false
+        normalizationVersion: EPUBNormalizationVersion = .current,
+        cleanup: Bool = false,
     ) {
         self.sourceEPUBPath = epubPath
         self.isPreUnzipped = false
         self.shouldCleanup = cleanup
         self.skipUnzipIfDirectoryExists = skipUnzipIfDirectoryExists
+        self.normalizationVersion = normalizationVersion
 
         // Use the provided destination URL directly
         self.unzipDestination = destinationURL
@@ -74,14 +85,20 @@ public actor EPUBParser {
     /// - Parameters:
     ///   - unzippedPath: Path to the unzipped EPUB directory
     ///   - cleanup: Whether to automatically cleanup the directory in deinit (defaults to false)
+    ///   - normalizationVersion: HTML normalization version to use (defaults to .current)
     /// - Throws: `EPUBParserError.invalidUnzippedPath` if the path is invalid or doesn't contain required EPUB files
     /// - Throws: `EPUBParserError.cacheNotFound` if the cache file is missing (required for pre-unzipped directories)
-    init(unzippedPath: URL, cleanup: Bool = false) throws {
+    init(
+        unzippedPath: URL,
+        normalizationVersion: EPUBNormalizationVersion = .current,
+        cleanup: Bool = false,
+    ) throws {
         self.sourceEPUBPath = nil
         self.isPreUnzipped = true
         self.unzipDestination = unzippedPath
         self.shouldCleanup = cleanup
         self.skipUnzipIfDirectoryExists = true  // Always true for pre-unzipped directories
+        self.normalizationVersion = normalizationVersion
 
         // Validate the unzipped path
         try validateUnzippedPath(unzippedPath)
@@ -244,7 +261,8 @@ public actor EPUBParser {
             manifest: updatedManifestItems,
             spineItems: updatedSpineItems,
             tableOfContents: tableOfContents,
-            baseURL: opfRootURL ?? unzipDestination
+            baseURL: opfRootURL ?? unzipDestination,
+            normalizationVersion: normalizationVersion.rawValue
         )
 
         cachedDocument = document
@@ -409,7 +427,6 @@ public actor EPUBParser {
         print("\n📝 Normalizing HTML content...")
 
         var normalizedCount = 0
-        var charsetAddedCount = 0
 
         for spineItem in spineItems {
             let manifestItem = spineItem.manifestItem
@@ -432,20 +449,13 @@ public actor EPUBParser {
                     // Read the HTML content
                     let originalContent = try String(contentsOf: fileURL, encoding: .utf8)
 
-                    // Check if it needs charset meta tag before normalization
-                    let needsCharset = !checkForCharsetMeta(in: originalContent)
-
-                    // Normalize the content (add charset if needed and clean line breaks)
-                    let normalizedContent = try normalizeHTMLContent(originalContent)
+                    // Normalize the content using the versioned normalizer
+                    let normalizedContent = EPUBHTMLNormalizer.normalize(originalContent, version: normalizationVersion)
 
                     // Write back if content changed
                     if normalizedContent != originalContent {
                         try normalizedContent.write(to: fileURL, atomically: true, encoding: String.Encoding.utf8)
                         normalizedCount += 1
-
-                        if needsCharset {
-                            charsetAddedCount += 1
-                        }
 
                         print("✏️ Normalized HTML file: \(manifestItem.path)")
                     }
@@ -458,105 +468,12 @@ public actor EPUBParser {
 
         print("📊 HTML normalization complete:")
         print("  Files processed: \(normalizedCount)")
-        print("  Charset meta tags added: \(charsetAddedCount)")
     }
 
-    /// Check if HTML content already contains a charset meta tag in the head section
-    private func checkForCharsetMeta(in content: String) -> Bool {
-        // Pattern to find <head> section
-        guard
-            let headRegex = try? NSRegularExpression(
-                pattern: "<head[^>]*>(.*?)</head>",
-                options: [.caseInsensitive, .dotMatchesLineSeparators]
-            )
-        else {
-            return false
-        }
-
-        let range = NSRange(location: 0, length: content.utf16.count)
-        guard let headMatch = headRegex.firstMatch(in: content, options: [], range: range),
-            let headRange = Range(headMatch.range(at: 1), in: content)
-        else {
-            return false
-        }
-
-        let headContent = String(content[headRange])
-
-        // Check for various charset meta tag patterns
-        let charsetPatterns = [
-            "<meta\\s+charset\\s*=\\s*[\"']?utf-8[\"']?[^>]*>",
-            "<meta\\s+[^>]*charset\\s*=\\s*[\"']?utf-8[\"']?[^>]*>",
-            "<meta\\s+http-equiv\\s*=\\s*[\"']?content-type[\"']?[^>]*charset\\s*=\\s*utf-8[^>]*>",
-        ]
-
-        for pattern in charsetPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                regex.firstMatch(in: headContent, options: [], range: NSRange(location: 0, length: headContent.utf16.count)) != nil
-            {
-                return true
-            }
-        }
-
-        return false
-    }
-
-    /// Normalize HTML content by adding charset meta tag if needed and cleaning line breaks
-    private func normalizeHTMLContent(_ content: String) throws -> String {
-        var normalizedContent = content
-
-        // Check if charset meta tag needs to be added
-        if !checkForCharsetMeta(in: content) {
-            normalizedContent = try addCharsetMeta(to: normalizedContent)
-        }
-
-        // Clean line breaks
-        normalizedContent = cleanHTMLLineBreaks(normalizedContent)
-
-        return normalizedContent
-    }
-
-    /// Add charset meta tag to HTML content
-    private func addCharsetMeta(to content: String) throws -> String {
-        // Pattern to find <head> tag
-        guard
-            let headRegex = try? NSRegularExpression(
-                pattern: "(<head[^>]*>)",
-                options: .caseInsensitive
-            )
-        else {
-            throw EPUBParserError.invalidEPUBStructure("Failed to parse HTML head tag")
-        }
-
-        let range = NSRange(location: 0, length: content.utf16.count)
-
-        // Replace the first <head> tag with <head> + charset meta tag
-        let result = headRegex.stringByReplacingMatches(
-            in: content,
-            options: [],
-            range: range,
-            withTemplate: "$1\n    <meta charset=\"utf-8\" />"
-        )
-
-        return result
-    }
-
-    /// Clean line breaks from HTML content
-    private func cleanHTMLLineBreaks(_ content: String) -> String {
-        // Remove excessive line breaks (more than 2 consecutive newlines)
-        let cleanedContent = content.replacingOccurrences(
-            of: "\\n\\s*\\n\\s*\\n+",
-            with: "\n\n",
-            options: .regularExpression
-        )
-
-        // Trim leading and trailing whitespace from each line while preserving intentional indentation
-        let lines = cleanedContent.components(separatedBy: .newlines)
-        let processedLines = lines.map { line in
-            // Only trim trailing whitespace, preserve leading whitespace for indentation
-            return line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.subtracting(CharacterSet.newlines))
-        }
-
-        return processedLines.joined(separator: "\n")
+    // MARK: - Testing Helper
+    /// Public helper for testing HTML normalization (non-isolated for testing)
+    public nonisolated static func testNormalizeHTML(_ content: String, version: EPUBNormalizationVersion = .current) -> String {
+        return EPUBHTMLNormalizer.normalize(content, version: version)
     }
 
     /// Validate that the unzipped path contains required EPUB files
@@ -831,8 +748,16 @@ public actor EPUBParser {
                 manifest: cachedDocument.manifest,
                 spineItems: cachedDocument.spineItems,
                 tableOfContents: cachedDocument.tableOfContents,
-                baseURL: absoluteBaseURL
+                baseURL: absoluteBaseURL,
+                normalizationVersion: cachedDocument.normalizationVersion
             )
+            
+            // Check if normalization version matches
+            if cachedDocument.normalizationVersion != normalizationVersion.rawValue {
+                print("⚠️ Normalization version mismatch (cached: \(cachedDocument.normalizationVersion), current: \(normalizationVersion.rawValue)), will reparse")
+                try? fileManager.removeItem(at: cacheURL)
+                return nil
+            }
 
             return document
         } catch {
@@ -858,7 +783,8 @@ public actor EPUBParser {
                 manifest: document.manifest,
                 spineItems: document.spineItems,
                 tableOfContents: document.tableOfContents,
-                baseURL: relativeBaseURL
+                baseURL: relativeBaseURL,
+                normalizationVersion: normalizationVersion.rawValue
             )
 
             let encoder = JSONEncoder()

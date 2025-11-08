@@ -16,6 +16,9 @@ public struct EPUBDocument: Hashable, Sendable, Codable {
 
     /// The base URL for resolving relative paths
     public let baseURL: URL
+    
+    /// HTML normalization version used when processing this document
+    public let normalizationVersion: Int
 
     /// Initialize an EPUB document
     public init(
@@ -23,13 +26,15 @@ public struct EPUBDocument: Hashable, Sendable, Codable {
         manifest: [EPUBManifestItem],
         spineItems: [EPUBSpineItem],
         tableOfContents: [EPUBTOCItem],
-        baseURL: URL
+        baseURL: URL,
+        normalizationVersion: Int = EPUBNormalizationVersion.current.rawValue
     ) {
         self.metadata = metadata
         self.manifest = manifest
         self.spineItems = spineItems
         self.tableOfContents = tableOfContents
         self.baseURL = baseURL
+        self.normalizationVersion = normalizationVersion
     }
 }
 
