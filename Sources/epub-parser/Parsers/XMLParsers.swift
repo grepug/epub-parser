@@ -515,7 +515,34 @@ internal class SpineParser: NSObject, XMLParserDelegate {
 
         parser.delegate = self
         if parser.parse() {
-            return spineItems
+            print("🔍 [Spine Parser] Before deduplication: \(spineItems.count) items")
+
+            // Deduplicate spine items by ID, keeping the first occurrence
+            var seenIds = Set<String>()
+            var deduplicatedItems: [EPUBSpineItem] = []
+
+            for item in spineItems {
+                if !seenIds.contains(item.id) {
+                    seenIds.insert(item.id)
+                    deduplicatedItems.append(item)
+                } else {
+                    print("🔍 [Spine Parser] Removing duplicate ID: \(item.id) at original index \(item.index)")
+                }
+            }
+
+            print("🔍 [Spine Parser] After deduplication: \(deduplicatedItems.count) items")
+
+            // Update indices to be sequential after deduplication
+            let finalItems = deduplicatedItems.enumerated().map { (offset, item) in
+                EPUBSpineItem(
+                    id: item.id,
+                    index: offset,
+                    linear: item.linear,
+                    manifestItem: item.manifestItem
+                )
+            }
+
+            return finalItems
         } else if let error = parser.parserError {
             throw error
         } else {

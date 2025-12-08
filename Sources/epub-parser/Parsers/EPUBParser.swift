@@ -27,10 +27,6 @@ public actor EPUBParser {
         cleanup: Bool = false
     ) async throws -> EPUBDocument {
         let parser: EPUBParser
-        
-        print("@@ desti", destinationURL)
-        
-        assert(destinationURL.lastPathComponent.contains("v"))
 
         if let epubSourceURL {
             parser = EPUBParser(
@@ -751,7 +747,7 @@ public actor EPUBParser {
                 baseURL: absoluteBaseURL,
                 normalizationVersion: cachedDocument.normalizationVersion
             )
-            
+
             // Check if normalization version matches
             if cachedDocument.normalizationVersion != normalizationVersion.rawValue {
                 print("⚠️ Normalization version mismatch (cached: \(cachedDocument.normalizationVersion), current: \(normalizationVersion.rawValue)), will reparse")
